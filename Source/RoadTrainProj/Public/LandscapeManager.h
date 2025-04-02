@@ -57,5 +57,5 @@ private:
 	int32 ChunkSectionIndex = 0;
 
 private:
-	void GenerateChunk(FIntPoint ChunkCoord);
+	void GenerateChunkInfo(const FIntPoint ChunkCoord);
 };

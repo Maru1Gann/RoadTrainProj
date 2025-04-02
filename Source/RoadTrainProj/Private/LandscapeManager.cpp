@@ -3,6 +3,7 @@
 
 #include "LandscapeManager.h"
 #include "ProceduralMeshComponent.h"
+#include "KismetProceduralMeshLibrary.h"
 
 // Sets default values
 ALandscapeManager::ALandscapeManager()
@@ -36,7 +37,25 @@ void ALandscapeManager::EditorGenerateLandscape()
 }
 
 
-void ALandscapeManager::GenerateChunk(FIntPoint ChunkCoord)
+void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 {
 
+	// Offset is ChunkCoordination * ChunkVertexCount * CellSize
+	FVector2D Offset = 
+		FVector2D(	ChunkCoord.X * this->ChunkVertexCount.X , 
+					ChunkCoord.Y * this->ChunkVertexCount.Y) * this->CellSize;
+
+
+	// Declarations
+	/* TArray<FVector> Vertices;
+	FVector Vertex;
+
+	TArray<FVector2D> UVs;
+	FVector2D UV;
+
+	TArray<FVector> Normals;
+	TArray<FProcMeshTangent> Tangents;
+ */
+	//UKismetProceduralMeshLibrary::CalculateTangentsForMesh(Vertices, Triangles, UVs, Normals, Tangents);
+	//CreateMeshSection(	this->ChunkSectionIndex, )
 }
