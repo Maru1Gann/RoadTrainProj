@@ -77,3 +77,6 @@ DerivedDataCache/*
 
 # (Added by Maru) Ignore Content/Static, just take Content/Dynamic
 Content/Static/*
+
+# (Added by Maru) Ignore .vscode Folder
+.vscode/*
