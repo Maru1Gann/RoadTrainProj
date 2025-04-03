@@ -4,7 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "ProceduralMeshComponent.h"
+
 #include "LandscapeManager.generated.h"
+
 
 UCLASS()
 class ROADTRAINPROJ_API ALandscapeManager : public AActor
@@ -18,12 +21,15 @@ public:
 	/* Public variables */
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	FIntPoint ChunkVertexCount;
-
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	float CellSize;
-
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	int RadiusByChunkCount;
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
+	UMaterialInterface* LandscapeMaterial = nullptr;
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
+	bool ShouldDrawDebugPoint = true;
+
 
 protected:
 	// Called when the game starts or when spawned
@@ -33,29 +39,40 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
-	/* Public Functions */
 
+	/* Editor Callable Functions */
 	UFUNCTION(CallInEditor, Category = "Landscape Manager")
-	void EditorGenerateLandscape();
+	void GenerateLandscape();
+	UFUNCTION(CallInEditor, Category = "Landscape Manager")
+	void Flush();
+	UFUNCTION(CallInEditor, Category = "Landscape Manager")
+	void DrawDebugPoints();
+	UFUNCTION(CallInEditor, Category = "Landscape Manager")
+	void RemoveDebugPoints();
 
-	void GenerateLandscape(FIntPoint VertexCount, float CellSize, int Radius);
 
 
-
-
-
-
+	
 
 // Only private sections below
 
 private:
-	UPROPERTY(VisibleDefaultsOnly)
 	class UProceduralMeshComponent* ProceduralMeshComponent;
 
 
 private:
 	int32 ChunkSectionIndex = 0;
 
+	// params for create mesh section.
+	// initialize with GenerateChunkInfo.
+	TArray<FVector> Vertices;
+	TArray<int32> Triangles;
+	TArray<FVector> Normals;
+	TArray<FVector2D> UVs;
+	TArray<FProcMeshTangent> Tangents;
+
 private:
-	void GenerateChunkInfo(const FIntPoint ChunkCoord);
+	void GenerateChunkInfo(const FIntPoint ChunkCoord = FIntPoint(0,0));
+
+	void EmptyChunkInfo();
 };
