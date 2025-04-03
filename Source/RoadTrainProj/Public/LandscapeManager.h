@@ -27,7 +27,7 @@ public:
 	int RadiusByChunkCount;
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	UMaterialInterface* LandscapeMaterial = nullptr;
-	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager|Debug")
 	bool ShouldDrawDebugPoint = true;
 
 
@@ -45,9 +45,9 @@ public:
 	void GenerateLandscape();
 	UFUNCTION(CallInEditor, Category = "Landscape Manager")
 	void Flush();
-	UFUNCTION(CallInEditor, Category = "Landscape Manager")
+	UFUNCTION(CallInEditor, Category = "Landscape Manager|Debug")
 	void DrawDebugPoints();
-	UFUNCTION(CallInEditor, Category = "Landscape Manager")
+	UFUNCTION(CallInEditor, Category = "Landscape Manager|Debug")
 	void RemoveDebugPoints();
 
 
