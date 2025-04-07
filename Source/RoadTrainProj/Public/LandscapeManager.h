@@ -58,7 +58,7 @@ public:
 
 private:
 	class UProceduralMeshComponent* ProceduralMeshComponent;
-
+	class ACharacter* PlayerCharacter;
 
 private:
 	int32 ChunkSectionIndex = 0;
@@ -71,8 +71,23 @@ private:
 	TArray<FVector2D> UVs;
 	TArray<FProcMeshTangent> Tangents;
 
+
+	// Chunk Generation Order
+	TArray<FIntPoint> ChunkOrder;
+
 private:
 	void GenerateChunkInfo(const FIntPoint ChunkCoord = FIntPoint(0,0));
 
+	void GenerateChunkOrder(const int RadiusByCount);
+
+	bool IsChunkInRadius(const FIntPoint StartChunk, const FIntPoint ChunkCoord, const float RadiusByLength);
+
+	FVector2D GetChunkCenter(const FIntPoint ChunkCoord);
+
 	void EmptyChunkInfo();
+
+	FIntPoint GetPlayerLocatedChunk();
+	
+
+
 };

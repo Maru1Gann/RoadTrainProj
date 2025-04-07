@@ -3,9 +3,12 @@
 
 #include "LandscapeManager.h"
 #include "ProceduralMeshComponent.h"
-#include "KismetProceduralMeshLibrary.h"
+#include "KismetProceduralMeshLibrary.h"	// Procedural Mesh Component
+#include "Kismet/KismetSystemLibrary.h"		// Drawing Debug Stuffs
+#include "Kismet/GameplayStatics.h"			// UGameplayStatics::GetPlayerCharacter(this, 0);
+#include "GameFramework/Character.h"		// ACharacter
 
-#include "Kismet/KismetSystemLibrary.h"
+
 
 // Sets default values
 ALandscapeManager::ALandscapeManager()
@@ -23,6 +26,11 @@ void ALandscapeManager::BeginPlay()
 {
 	Super::BeginPlay();
 
+	PlayerCharacter = UGameplayStatics::GetPlayerCharacter(this, 0);
+	if(PlayerCharacter == nullptr)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("LandScapeManager_BeginPlay : PlayerCharacter nullptr"));
+	}
 	GenerateLandscape();
 }
 
@@ -36,6 +44,7 @@ void ALandscapeManager::Tick(float DeltaTime)
 
 
 // Editor Callable Functions
+
 void ALandscapeManager::GenerateLandscape()
 {
 	// TODO : We don't need to create collisions for most of the chunks.
@@ -109,6 +118,7 @@ void ALandscapeManager::RemoveDebugPoints()
 
 void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 {
+	EmptyChunkInfo();
 
 	// Offset is ChunkCoordination * ChunkVertexCount * CellSize
 	FVector Offset = 
@@ -215,6 +225,117 @@ void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 	return;
 }
 
+void ALandscapeManager::GenerateChunkOrder(int RadiusByCount)
+{
+	ChunkOrder.Empty();
+	
+	// we make circle with x length radius. Ignore Y Length.
+	float RadiusByLength = RadiusByCount * ( (ChunkVertexCount.X - 1) * CellSize );
+
+	// we make square with chunks
+	// from the start point, we make it like a whirl
+
+	/* example
+		16	15	14	13	12
+		17	4	3	2	11
+		18	5	0	1	10
+		19	6	7	8	9
+		20	21	22	23	24
+
+		this goes
+		*Iterator starts from 2
+
+		one step front
+		'Iterator - 1' step upwards
+		'Iterator' step backwards
+		'Iterator' step downwards
+		'Iterator' step forwards
+		-> one square done.
+		iterator++
+		
+		add it only when it's inside radius.
+	*/
+
+	int32 Iterator = 2;
+	FIntPoint CurrentCoord = FIntPoint(0,0);
+	ChunkOrder.Add(CurrentCoord);
+
+	while ( Iterator <= RadiusByCount + 1)
+	{
+		// one step front.
+		CurrentCoord += FIntPoint(1,0);
+		ChunkOrder.Add(CurrentCoord);
+
+		// (Iterator - 1) step up
+		for (int i = 0; i < Iterator - 1; i++)
+		{
+			
+			CurrentCoord += FIntPoint(0,1);
+			if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord, RadiusByLength) )
+			{
+				ChunkOrder.Add(CurrentCoord);
+			}
+		}
+
+		// (Iterator) step back
+		for (int i = 0; i < Iterator; i++)
+		{
+			
+			CurrentCoord += FIntPoint(-1, 0);
+			if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord, RadiusByLength) )
+			{
+				ChunkOrder.Add(CurrentCoord);
+			}
+		}
+
+		// (Iterator) step down
+		for (int i = 0; i < Iterator; i++)
+		{
+
+			CurrentCoord += FIntPoint(0, -1);
+			if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord, RadiusByLength) )
+			{
+				ChunkOrder.Add(CurrentCoord);
+			}
+		}
+
+		// (Iterator) step forward
+		for (int i = 0; i < Iterator; i++)
+		{
+			
+			CurrentCoord += FIntPoint(1, 0);
+			if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord, RadiusByLength) )
+			{
+				ChunkOrder.Add(CurrentCoord);
+			}
+		}
+
+
+		Iterator++;
+	}
+
+
+	return;
+}
+
+bool ALandscapeManager::IsChunkInRadius(const FIntPoint StartChunk, const FIntPoint CurrentChunkCoord, const float RadiusByLength)
+{
+	FVector2D StartPointCenter = GetChunkCenter(StartChunk);
+	FVector2D CurrentChunkCenter = GetChunkCenter(CurrentChunkCoord);
+
+    return RadiusByLength >= FVector2d::Distance(StartPointCenter, CurrentChunkCenter);
+}
+
+FVector2D ALandscapeManager::GetChunkCenter(const FIntPoint ChunkCoord)
+{
+	FVector2D ChunkLength = FVector2D( (ChunkVertexCount.X - 1), (ChunkVertexCount.Y - 1)) * CellSize;
+	FVector2D Offset = FVector2D( ChunkCoord.X * ChunkLength.X , ChunkCoord.Y * ChunkLength.Y  );
+
+	FVector2D Center = ChunkLength / 2;
+
+	return Offset + Center;
+}
+
 void ALandscapeManager::EmptyChunkInfo()
 {
 	Vertices.Empty();
@@ -226,3 +347,21 @@ void ALandscapeManager::EmptyChunkInfo()
 	return;
 }
 
+FIntPoint ALandscapeManager::GetPlayerLocatedChunk()
+{
+	if(PlayerCharacter == nullptr)
+	{
+		UE_LOG(LogTemp, Display, TEXT("PlayerCharacterPointer == nullptr"));
+
+		return FIntPoint(0,0);
+	}
+
+	// conversion to 2d Vector (we don't need Z axis)
+	FVector2D PlayerLocation = FVector2D( PlayerCharacter->GetActorLocation() ); 
+	// length of each side of chunk
+	FVector2D Length = FVector2D( (ChunkVertexCount.X - 1) , (ChunkVertexCount.Y - 1) ) * CellSize; 
+	// ChunkCoord of the chunk where player is located.
+	FIntPoint PlayerLocatedChunk = FIntPoint( int32(PlayerLocation.X / Length.X) , int32(PlayerLocation.Y / Length.Y) );
+
+	return PlayerLocatedChunk;
+}
