@@ -225,10 +225,10 @@ void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 	return;
 }
 
-void ALandscapeManager::GenerateChunkOrder(int RadiusByCount)
+void ALandscapeManager::GenerateChunkOrder(const int RadiusByCount)
 {
 	ChunkOrder.Empty();
-	
+
 	// we make circle with x length radius. Ignore Y Length.
 	float RadiusByLength = RadiusByCount * ( (ChunkVertexCount.X - 1) * CellSize );
 
