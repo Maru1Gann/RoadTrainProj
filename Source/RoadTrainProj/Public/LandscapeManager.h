@@ -18,6 +18,7 @@ public:
 	// Sets default values for this actor's properties
 	ALandscapeManager();
 
+
 	/* Public variables */
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	FIntPoint ChunkVertexCount;
@@ -39,13 +40,14 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
+
 	// Blueprint Callable Functions
 	UFUNCTION(BlueprintCallable)
-	void GenerateLandscape();
+	void UpdateLandscape();
 
 	/* Editor Callable Functions */
 	UFUNCTION(CallInEditor, Category = "Landscape Manager")
-	void EditorGenerateLandscape();
+	void GenerateLandscape();
 	UFUNCTION(CallInEditor, Category = "Landscape Manager")
 	void Flush();
 	UFUNCTION(CallInEditor, Category = "Landscape Manager|Debug")
@@ -62,7 +64,7 @@ private:
 
 private:
 	int32 ChunkSectionIndex = 0;
-	FIntPoint PlayerLocation = FIntPoint(0,0);
+	FIntPoint PlayerLocatedChunk = FIntPoint(0,0);
 
 	// params for create mesh section.
 	// initialize with GenerateChunkInfo.
@@ -76,14 +78,18 @@ private:
 	TArray<FIntPoint> ChunkOrder;
 
 	// Chunk Status
-	// <ChunkCoord, ChunkSectionIndex>
+	// <ChunkSectionIndex, ChunkCoord>
 	// TMap<key, value>
-	TMap<FIntPoint, int32> ChunkStatus;
+	// if key == -1, not generated
+	TMap<int32, FIntPoint> ChunkStatus;
+	TArray<FIntPoint, int32> RemovableChunks;
 
 private:
 	void GenerateChunkInfo(const FIntPoint ChunkCoord = FIntPoint(0,0));
 
 	void GenerateChunkOrder(const int RadiusByCount);
+
+	void UpdateLandscapeInfo(const FIntPoint ChunkCoord);
 
 	void DrawSingleChunk(const FIntPoint ChunkCoord);
 
@@ -96,6 +102,8 @@ private:
 	FIntPoint GetPlayerLocatedChunk();
 	
 	void DrawDebugPoints();
+
+	
 
 
 };

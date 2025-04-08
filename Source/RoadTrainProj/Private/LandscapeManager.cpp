@@ -35,7 +35,7 @@ void ALandscapeManager::BeginPlay()
 
 	GenerateChunkOrder(this->RadiusByChunkCount);
 
-	PlayerLocation = GetPlayerLocatedChunk();
+	PlayerLocatedChunk = GetPlayerLocatedChunk();
 
 	GenerateLandscape();
 }
@@ -49,29 +49,16 @@ void ALandscapeManager::Tick(float DeltaTime)
 
 
 // BlueprintCallable
-void ALandscapeManager::GenerateLandscape()
+void ALandscapeManager::UpdateLandscape()
 {
-	FIntPoint PlayerChunkCoord = GetPlayerLocatedChunk();
-
-	// If Player didn't move, do nothing.
-	if( PlayerLocation == PlayerChunkCoord )
-	{
-		return;
-	}
-	else
-	{
-		PlayerLocation = PlayerChunkCoord;
-	}
-
-	// ProceduralMeshComponent->UpdateMeshSection()
-	
 	return;
 }
 
 
-// Editor Callable Functions
 
-void ALandscapeManager::EditorGenerateLandscape()
+// Editor Callable Functions
+// Call this only once in Beginplay.
+void ALandscapeManager::GenerateLandscape()
 {
 	Flush();
 
@@ -95,15 +82,6 @@ void ALandscapeManager::Flush()
 	return;
 }
 
-void ALandscapeManager::DrawDebugPoints()
-{
-	for (int i = 0; i < Vertices.Num(); i++)
-	{
-		DrawDebugPoint(this->GetWorld(), Vertices[i], 5, FColor::Red, true);
-	}
-	
-	return;
-}
 
 void ALandscapeManager::RemoveDebugPoints()
 {
@@ -225,7 +203,7 @@ void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 
 
 
-	UE_LOG(LogTemp, Display, TEXT("Generated Chunk Info"));
+	UE_LOG(LogTemp, Display, TEXT("(%d, %d) : Generated Chunk Info"), ChunkCoord.X, ChunkCoord.Y);
 	return;
 }
 
@@ -326,6 +304,16 @@ void ALandscapeManager::GenerateChunkOrder(const int RadiusByCount)
 	return;
 }
 
+void ALandscapeManager::UpdateLandscapeInfo(const FIntPoint ChunkCoord)
+{
+	float RadiusByLength = RadiusByChunkCount * ( (ChunkVertexCount.X - 1) * CellSize );
+
+	// Find Removable Chunks
+
+
+	return;
+}
+
 void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
 {
 	// TODO : We don't need to create collisions for most of the chunks.
@@ -355,8 +343,14 @@ void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
 		ProceduralMeshComponent->SetMaterial(ChunkSectionIndex, LandscapeMaterial);
 	}
 
-	// IMPORTANT!! ↓
+	// Updating TMap<Key=ChunkCoord, Value=ChunkSectionIndex> ChunkStatus
+	ChunkStatus.Add(ChunkSectionIndex, ChunkCoord);
+
+
+	// IMPORTANT!! ChunkSectionIndex Update!
 	ChunkSectionIndex++;
+	// IMPORTANT!! 
+
 
 	// Drawing DebugPoint
 	if(ShouldDrawDebugPoint)
@@ -412,7 +406,18 @@ FIntPoint ALandscapeManager::GetPlayerLocatedChunk()
 	// length of each side of chunk
 	FVector2D Length = FVector2D( (ChunkVertexCount.X - 1) , (ChunkVertexCount.Y - 1) ) * CellSize; 
 	// ChunkCoord of the chunk where player is located.
-	FIntPoint PlayerLocatedChunk = FIntPoint( int32(PlayerLocation.X / Length.X) , int32(PlayerLocation.Y / Length.Y) );
+	FIntPoint PlayerLocatedChunkCoord = FIntPoint( int32(PlayerLocation.X / Length.X) , int32(PlayerLocation.Y / Length.Y) );
 
-	return PlayerLocatedChunk;
+	return PlayerLocatedChunkCoord;
 }
+
+void ALandscapeManager::DrawDebugPoints()
+{
+	for (int i = 0; i < Vertices.Num(); i++)
+	{
+		DrawDebugPoint(this->GetWorld(), Vertices[i], 5, FColor::Red, true);
+	}
+	
+	return;
+}
+
