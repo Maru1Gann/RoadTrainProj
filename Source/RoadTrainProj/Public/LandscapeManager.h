@@ -39,17 +39,17 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
+	// Blueprint Callable Functions
+	UFUNCTION(BlueprintCallable)
+	void GenerateLandscape();
 
 	/* Editor Callable Functions */
 	UFUNCTION(CallInEditor, Category = "Landscape Manager")
-	void GenerateLandscape();
+	void EditorGenerateLandscape();
 	UFUNCTION(CallInEditor, Category = "Landscape Manager")
 	void Flush();
 	UFUNCTION(CallInEditor, Category = "Landscape Manager|Debug")
-	void DrawDebugPoints();
-	UFUNCTION(CallInEditor, Category = "Landscape Manager|Debug")
 	void RemoveDebugPoints();
-
 
 
 	
@@ -62,6 +62,7 @@ private:
 
 private:
 	int32 ChunkSectionIndex = 0;
+	FIntPoint PlayerLocation = FIntPoint(0,0);
 
 	// params for create mesh section.
 	// initialize with GenerateChunkInfo.
@@ -71,14 +72,20 @@ private:
 	TArray<FVector2D> UVs;
 	TArray<FProcMeshTangent> Tangents;
 
-
 	// Chunk Generation Order
 	TArray<FIntPoint> ChunkOrder;
+
+	// Chunk Status
+	// <ChunkCoord, ChunkSectionIndex>
+	// TMap<key, value>
+	TMap<FIntPoint, int32> ChunkStatus;
 
 private:
 	void GenerateChunkInfo(const FIntPoint ChunkCoord = FIntPoint(0,0));
 
 	void GenerateChunkOrder(const int RadiusByCount);
+
+	void DrawSingleChunk(const FIntPoint ChunkCoord);
 
 	bool IsChunkInRadius(const FIntPoint StartChunk, const FIntPoint ChunkCoord, const float RadiusByLength);
 
@@ -88,6 +95,7 @@ private:
 
 	FIntPoint GetPlayerLocatedChunk();
 	
+	void DrawDebugPoints();
 
 
 };

@@ -25,12 +25,18 @@ ALandscapeManager::ALandscapeManager()
 void ALandscapeManager::BeginPlay()
 {
 	Super::BeginPlay();
-
+	
+	// get player reference
 	PlayerCharacter = UGameplayStatics::GetPlayerCharacter(this, 0);
 	if(PlayerCharacter == nullptr)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("LandScapeManager_BeginPlay : PlayerCharacter nullptr"));
 	}
+
+	GenerateChunkOrder(this->RadiusByChunkCount);
+
+	PlayerLocation = GetPlayerLocatedChunk();
+
 	GenerateLandscape();
 }
 
@@ -42,43 +48,40 @@ void ALandscapeManager::Tick(float DeltaTime)
 }
 
 
+// BlueprintCallable
+void ALandscapeManager::GenerateLandscape()
+{
+	FIntPoint PlayerChunkCoord = GetPlayerLocatedChunk();
+
+	// If Player didn't move, do nothing.
+	if( PlayerLocation == PlayerChunkCoord )
+	{
+		return;
+	}
+	else
+	{
+		PlayerLocation = PlayerChunkCoord;
+	}
+
+	// ProceduralMeshComponent->UpdateMeshSection()
+	
+	return;
+}
+
 
 // Editor Callable Functions
 
-void ALandscapeManager::GenerateLandscape()
+void ALandscapeManager::EditorGenerateLandscape()
 {
-	// TODO : We don't need to create collisions for most of the chunks.
-	if(ProceduralMeshComponent == nullptr)
-	{
-		UE_LOG(LogTemp, Error, TEXT(" %s : ProceduralMeshComponent nullptr"), *GetName());
-		return;
-	}
-
 	Flush();
 
-	GenerateChunkInfo();
+	GenerateChunkOrder(this->RadiusByChunkCount);
 
-	// debug
-	if(ShouldDrawDebugPoint)
+	for (int i = 0; i < ChunkOrder.Num(); i++)
 	{
-		DrawDebugPoints();
+		DrawSingleChunk( ChunkOrder[i] );
 	}
-	// debug
-
-	ProceduralMeshComponent->CreateMeshSection(
-		ChunkSectionIndex, 
-		Vertices, 
-		Triangles, 
-		Normals, 
-		UVs, 
-		TArray<FColor>(), 
-		Tangents, 
-		true);
-	if( LandscapeMaterial )
-	{
-		ProceduralMeshComponent->SetMaterial(ChunkSectionIndex, LandscapeMaterial);
-	}
-
+	
 	return;
 }
 
@@ -87,6 +90,7 @@ void ALandscapeManager::Flush()
 	ProceduralMeshComponent->ClearAllMeshSections();
 	FlushPersistentDebugLines(this->GetWorld());
 	EmptyChunkInfo();
+	ChunkSectionIndex = 0;
 
 	return;
 }
@@ -256,18 +260,22 @@ void ALandscapeManager::GenerateChunkOrder(const int RadiusByCount)
 		add it only when it's inside radius.
 	*/
 
-	int32 Iterator = 2;
+	int32 Iterator = 1;
 	FIntPoint CurrentCoord = FIntPoint(0,0);
 	ChunkOrder.Add(CurrentCoord);
 
-	while ( Iterator <= RadiusByCount + 1)
+	while ( Iterator <= RadiusByCount )
 	{
+		int32 step = Iterator*2;
 		// one step front.
 		CurrentCoord += FIntPoint(1,0);
-		ChunkOrder.Add(CurrentCoord);
+		if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord, RadiusByLength) )
+			{
+				ChunkOrder.Add(CurrentCoord);
+			}
 
-		// (Iterator - 1) step up
-		for (int i = 0; i < Iterator - 1; i++)
+		// step up
+		for (int i = 0; i < step - 1; i++)
 		{
 			
 			CurrentCoord += FIntPoint(0,1);
@@ -277,8 +285,8 @@ void ALandscapeManager::GenerateChunkOrder(const int RadiusByCount)
 			}
 		}
 
-		// (Iterator) step back
-		for (int i = 0; i < Iterator; i++)
+		// step back
+		for (int i = 0; i < step; i++)
 		{
 			
 			CurrentCoord += FIntPoint(-1, 0);
@@ -288,8 +296,8 @@ void ALandscapeManager::GenerateChunkOrder(const int RadiusByCount)
 			}
 		}
 
-		// (Iterator) step down
-		for (int i = 0; i < Iterator; i++)
+		// step down
+		for (int i = 0; i < step; i++)
 		{
 
 			CurrentCoord += FIntPoint(0, -1);
@@ -299,8 +307,8 @@ void ALandscapeManager::GenerateChunkOrder(const int RadiusByCount)
 			}
 		}
 
-		// (Iterator) step forward
-		for (int i = 0; i < Iterator; i++)
+		// step forward
+		for (int i = 0; i < step; i++)
 		{
 			
 			CurrentCoord += FIntPoint(1, 0);
@@ -315,6 +323,49 @@ void ALandscapeManager::GenerateChunkOrder(const int RadiusByCount)
 	}
 
 
+	return;
+}
+
+void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
+{
+	// TODO : We don't need to create collisions for most of the chunks.
+	if(ProceduralMeshComponent == nullptr)
+	{
+		UE_LOG(LogTemp, Error, TEXT(" %s : ProceduralMeshComponent nullptr"), *GetName());
+		return;
+	}
+
+	GenerateChunkInfo(ChunkCoord);
+
+	// Drawing Meshes
+	ProceduralMeshComponent->CreateMeshSection(
+		ChunkSectionIndex, 
+		Vertices, 
+		Triangles, 
+		Normals, 
+		UVs, 
+		TArray<FColor>(), 
+		Tangents, 
+		true);
+
+
+	// Assigning Landscape Material
+	if( LandscapeMaterial )
+	{
+		ProceduralMeshComponent->SetMaterial(ChunkSectionIndex, LandscapeMaterial);
+	}
+
+	// IMPORTANT!! ↓
+	ChunkSectionIndex++;
+
+	// Drawing DebugPoint
+	if(ShouldDrawDebugPoint)
+	{
+		DrawDebugPoints();
+	}
+	// debug
+
+	
 	return;
 }
 
