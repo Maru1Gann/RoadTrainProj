@@ -78,11 +78,11 @@ private:
 	TArray<FIntPoint> ChunkOrder;
 
 	// Chunk Status
-	// <ChunkSectionIndex, ChunkCoord>
+	// <ChunkCoord, ChunkSectionIndex>
 	// TMap<key, value>
-	// if key == -1, not generated
-	TMap<int32, FIntPoint> ChunkStatus;
-	TArray<FIntPoint, int32> RemovableChunks;
+	TMap<FIntPoint, int32> ChunkStatus;
+	TArray<int32> RemovableChunks;
+	TArray<FIntPoint> NeededChunks;
 
 private:
 	void GenerateChunkInfo(const FIntPoint ChunkCoord = FIntPoint(0,0));
@@ -90,6 +90,8 @@ private:
 	void GenerateChunkOrder(const int RadiusByCount);
 
 	void UpdateLandscapeInfo(const FIntPoint ChunkCoord);
+
+	void UpdateSingleChunk(const int32 SectionIndex, const FIntPoint ChunkCoord);
 
 	void DrawSingleChunk(const FIntPoint ChunkCoord);
 

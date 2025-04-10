@@ -49,8 +49,31 @@ void ALandscapeManager::Tick(float DeltaTime)
 
 
 // BlueprintCallable
+// We'll call this function periodically in BP_LandscapeManager
 void ALandscapeManager::UpdateLandscape()
 {
+
+	FIntPoint PlayerCurrentChunk = GetPlayerLocatedChunk();
+
+	// if location is same as last call, return.
+	if ( PlayerLocatedChunk == PlayerCurrentChunk )
+	{
+		return;
+	}
+	else
+	{
+		PlayerLocatedChunk = PlayerCurrentChunk;
+	}
+
+	// Updates Needed & Removable Chunks
+	UpdateLandscapeInfo(PlayerCurrentChunk);
+
+	for(int i = 0; i < NeededChunks.Num(); i++)
+	{
+		GenerateChunkInfo( NeededChunks[i] );
+		UpdateSingleChunk( RemovableChunks[i], NeededChunks[i] );
+	}
+
 	return;
 }
 
@@ -66,6 +89,7 @@ void ALandscapeManager::GenerateLandscape()
 
 	for (int i = 0; i < ChunkOrder.Num(); i++)
 	{
+		GenerateChunkInfo( ChunkOrder[i] );
 		DrawSingleChunk( ChunkOrder[i] );
 	}
 	
@@ -306,24 +330,75 @@ void ALandscapeManager::GenerateChunkOrder(const int RadiusByCount)
 
 void ALandscapeManager::UpdateLandscapeInfo(const FIntPoint ChunkCoord)
 {
-	float RadiusByLength = RadiusByChunkCount * ( (ChunkVertexCount.X - 1) * CellSize );
+	// This function updates Needed & Removable Chunks.
 
-	// Find Removable Chunks
+	// Possible Optimizations : We don't need to create collisions for most of the chunks.
+
+	NeededChunks.Empty();
+	RemovableChunks.Empty();
+	TMap<FIntPoint, int32> KeepableChunks;
+
+	for(int i = 0; i < ChunkOrder.Num(); i++)
+	{
+		// Add Offset (starting point of current position == ChunkCoord)
+		FIntPoint CurrentChunk = ChunkOrder[i] + ChunkCoord;
+
+		// Needed Chunks
+		if ( ChunkStatus.Contains(CurrentChunk) == false )
+		{
+			NeededChunks.Emplace(CurrentChunk);
+		}
+		else // NeededChunk already exists
+		{
+			KeepableChunks.Emplace( CurrentChunk, ChunkStatus[CurrentChunk] );
+		}
+	}
+
+	// find Removable Chunks
+	for( TPair<FIntPoint, int32> Elem : ChunkStatus )
+	{
+		if( KeepableChunks.Contains( Elem.Key ) == false )
+		{
+			RemovableChunks.Add( Elem.Value );
+		}
+
+	}
+	
+	// Debug
+	if( RemovableChunks.Num() != NeededChunks.Num() )
+	{
+		UE_LOG(LogTemp, Warning, TEXT(" RemovableChunks != NeededChunks "));
+	}
 
 
 	return;
 }
 
+void ALandscapeManager::UpdateSingleChunk(const int32 SectionIndex, const FIntPoint ChunkCoord)
+{
+	// Make sure SectionIndex_Section is not in KeepableChunks before usage!
+	// For Multithreading purposes, we GenerateChunkInfo outside & before this function.
+	// this funtion should only be run on main thread.
+
+	ProceduralMeshComponent->UpdateMeshSection(
+		SectionIndex, 
+		Vertices, 
+		Normals, 
+		UVs, 
+		TArray<FColor>(), 
+		Tangents 
+	);
+}
+
 void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
 {
-	// TODO : We don't need to create collisions for most of the chunks.
+	// Possible Optimizations : We don't need to create collisions for most of the chunks.
+
 	if(ProceduralMeshComponent == nullptr)
 	{
 		UE_LOG(LogTemp, Error, TEXT(" %s : ProceduralMeshComponent nullptr"), *GetName());
 		return;
 	}
-
-	GenerateChunkInfo(ChunkCoord);
 
 	// Drawing Meshes
 	ProceduralMeshComponent->CreateMeshSection(
@@ -344,7 +419,7 @@ void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
 	}
 
 	// Updating TMap<Key=ChunkCoord, Value=ChunkSectionIndex> ChunkStatus
-	ChunkStatus.Add(ChunkSectionIndex, ChunkCoord);
+	ChunkStatus.Add(ChunkCoord, ChunkSectionIndex);
 
 
 	// IMPORTANT!! ChunkSectionIndex Update!
@@ -383,11 +458,12 @@ FVector2D ALandscapeManager::GetChunkCenter(const FIntPoint ChunkCoord)
 
 void ALandscapeManager::EmptyChunkInfo()
 {
-	Vertices.Empty();
-	Triangles.Empty();
-	Normals.Empty();
-	UVs.Empty();
-	Tangents.Empty();
+	// Reset leaves slack. Empty does removes slack.
+	Vertices.Reset();
+	Triangles.Reset();
+	Normals.Reset();
+	UVs.Reset();
+	Tangents.Reset();
 
 	return;
 }
