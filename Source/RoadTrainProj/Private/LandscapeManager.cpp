@@ -2,12 +2,13 @@
 
 
 #include "LandscapeManager.h"
+
 #include "ProceduralMeshComponent.h"
 #include "KismetProceduralMeshLibrary.h"	// Procedural Mesh Component
 #include "Kismet/KismetSystemLibrary.h"		// Drawing Debug Stuffs
 #include "Kismet/GameplayStatics.h"			// UGameplayStatics::GetPlayerCharacter(this, 0);
 #include "GameFramework/Character.h"		// ACharacter
-
+#include "Math/UnrealMathUtility.h"			// FMath::PerlinNoise2D
 
 
 // Sets default values
@@ -82,6 +83,9 @@ void ALandscapeManager::UpdateLandscape()
 		i++;
 	}
 
+
+	UE_LOG(LogTemp, Display, TEXT( "Landscape Updated" ) );
+
 	return;
 }
 
@@ -131,6 +135,7 @@ void ALandscapeManager::RemoveDebugPoints()
 */
 
 
+
 void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 {
 	EmptyChunkInfo();
@@ -161,8 +166,12 @@ void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 	{
 		for (int32 iX = -1; iX <= ChunkVertexCount.X;  iX++)
 		{
-			Vertex = FVector( iX, iY, 0.f ) * CellSize + Offset; // getting the actual vertex coordinates in worldspace
-			// TODO : we need to add height generation for z axis. HERE.
+			// getting the actual vertex coordinates in worldspace
+			Vertex = FVector( iX, iY, 0.f ) * CellSize + Offset; 
+
+			// PerlinNoise Based Height Generation.
+			Vertex.Z = GenerateHeight(FVector2D(Vertex));
+
 			BigVertices.Add(Vertex);
 			UV = FVector2D(Vertex) / CellSize; // convert to FVector2D
 			BigUVs.Add(UV);	
@@ -236,7 +245,7 @@ void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 
 
 
-	UE_LOG(LogTemp, Display, TEXT("(%d, %d) : Generated Chunk Info"), ChunkCoord.X, ChunkCoord.Y);
+	// UE_LOG(LogTemp, Display, TEXT("(%d, %d) : Generated Chunk Info"), ChunkCoord.X, ChunkCoord.Y);
 	return;
 }
 
@@ -397,7 +406,7 @@ void ALandscapeManager::UpdateSingleChunk(const int32 SectionIndex, const FIntPo
 		TArray<FColor>(), 
 		Tangents 
 	);
-	
+
 }
 
 void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
@@ -447,6 +456,10 @@ void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
 	
 	return;
 }
+
+
+/* Tools */
+
 
 bool ALandscapeManager::IsChunkInRadius(const FIntPoint StartChunk, const FIntPoint CurrentChunkCoord, const float RadiusByLength)
 {
@@ -517,3 +530,18 @@ void ALandscapeManager::DrawDebugPoints()
 	return;
 }
 
+float ALandscapeManager::GenerateHeight(const FVector2D Location)
+{
+
+	float height = 0;
+
+	for ( int i = 0; i < PerlinNoiseLayers.Num(); i++)
+	{
+		float NoiseScale = PerlinNoiseLayers[i].NoiseScale;
+		float Amplitude = PerlinNoiseLayers[i].Amplitude;
+		float Offset = PerlinNoiseLayers[i].Offset;
+		height += FMath::PerlinNoise2D(Location * NoiseScale + FVector2d(0.1f, 0.1f) + Offset) * Amplitude;
+	}
+
+	return height;
+}

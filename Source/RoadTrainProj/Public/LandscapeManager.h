@@ -9,6 +9,31 @@
 #include "LandscapeManager.generated.h"
 
 
+// we'll use this struct only in this header, so just declared it here.
+USTRUCT(Atomic)
+struct FPerlinNoiseVariables
+{
+	GENERATED_BODY()
+
+	FPerlinNoiseVariables(float NoiseScale = 0, float Amplitude = 0, float Offset = 0)
+	{
+		this->NoiseScale = NoiseScale;
+		this->Amplitude = Amplitude;
+		this->Offset = Offset;
+	}
+
+	UPROPERTY(EditAnywhere)
+	float NoiseScale;
+	
+	UPROPERTY(EditAnywhere)
+	float Amplitude;
+
+	UPROPERTY(EditAnywhere)
+	float Offset;
+
+};
+
+
 UCLASS()
 class ROADTRAINPROJ_API ALandscapeManager : public AActor
 {
@@ -22,12 +47,19 @@ public:
 	/* Public variables */
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	FIntPoint ChunkVertexCount;
+	
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	float CellSize;
+	
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	int RadiusByChunkCount;
+	
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	UMaterialInterface* LandscapeMaterial = nullptr;
+
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
+	TArray<FPerlinNoiseVariables> PerlinNoiseLayers;
+
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager|Debug")
 	bool ShouldDrawDebugPoint = true;
 
@@ -95,6 +127,9 @@ private:
 
 	void DrawSingleChunk(const FIntPoint ChunkCoord);
 
+
+	/* Tools */
+
 	bool IsChunkInRadius(const FIntPoint StartChunk, const FIntPoint ChunkCoord, const float RadiusByLength);
 
 	FVector2D GetChunkCenter(const FIntPoint ChunkCoord);
@@ -105,7 +140,9 @@ private:
 	
 	void DrawDebugPoints();
 
+	float GenerateHeight(const FVector2D Location);
+
 	
-
-
 };
+
+
