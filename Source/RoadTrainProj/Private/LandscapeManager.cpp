@@ -410,6 +410,9 @@ void ALandscapeManager::UpdateSingleChunk(const int32 SectionIndex, const FIntPo
 		TArray<FColor>(), 
 		Tangents 
 	);
+	
+	// fixes bad collision issues
+	ProceduralMeshComponent->ClearCollisionConvexMeshes();
 
 }
 
