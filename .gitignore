@@ -80,4 +80,4 @@ Content/Static/*
 
 # (Added by Maru) Ignore .vscode Folder
 .vscode/*
-RoadTrainProj.code-workspace
+*.code-workspace
