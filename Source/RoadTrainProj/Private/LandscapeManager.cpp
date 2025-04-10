@@ -84,6 +84,9 @@ void ALandscapeManager::UpdateLandscape()
 	}
 
 
+	// fixes bad collision issues
+	ProceduralMeshComponent->ClearCollisionConvexMeshes();
+
 	UE_LOG(LogTemp, Display, TEXT( "Landscape Updated" ) );
 
 	return;
@@ -410,7 +413,7 @@ void ALandscapeManager::UpdateSingleChunk(const int32 SectionIndex, const FIntPo
 		TArray<FColor>(), 
 		Tangents 
 	);
-
+	
 }
 
 void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
@@ -432,7 +435,8 @@ void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
 		UVs, 
 		TArray<FColor>(), 
 		Tangents, 
-		true);
+		true
+	);
 
 
 	// Assigning Landscape Material
