@@ -66,12 +66,20 @@ void ALandscapeManager::UpdateLandscape()
 	}
 
 	// Updates Needed & Removable Chunks
-	UpdateLandscapeInfo(PlayerCurrentChunk);
+	UpdateLandscapeInfo( PlayerCurrentChunk );
 
-	for(int i = 0; i < NeededChunks.Num(); i++)
+	int i = 0;
+	for (TPair<FIntPoint, int32> Elem : RemovableChunks )
 	{
-		GenerateChunkInfo( NeededChunks[i] );
-		UpdateSingleChunk( RemovableChunks[i], NeededChunks[i] );
+		FIntPoint NeededChunkCoord = NeededChunks[i];
+		GenerateChunkInfo( NeededChunkCoord );
+		UpdateSingleChunk( Elem.Value, NeededChunkCoord );
+		
+		// Update ChunkStatus
+		ChunkStatus.Remove( Elem.Key );
+		ChunkStatus.Add( NeededChunkCoord, Elem.Value );
+
+		i++;
 	}
 
 	return;
@@ -83,6 +91,7 @@ void ALandscapeManager::UpdateLandscape()
 // Call this only once in Beginplay.
 void ALandscapeManager::GenerateLandscape()
 {
+
 	Flush();
 
 	GenerateChunkOrder(this->RadiusByChunkCount);
@@ -359,7 +368,7 @@ void ALandscapeManager::UpdateLandscapeInfo(const FIntPoint ChunkCoord)
 	{
 		if( KeepableChunks.Contains( Elem.Key ) == false )
 		{
-			RemovableChunks.Add( Elem.Value );
+			RemovableChunks.Add( Elem.Key, Elem.Value );
 		}
 
 	}
@@ -388,6 +397,7 @@ void ALandscapeManager::UpdateSingleChunk(const int32 SectionIndex, const FIntPo
 		TArray<FColor>(), 
 		Tangents 
 	);
+	
 }
 
 void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
@@ -483,6 +493,16 @@ FIntPoint ALandscapeManager::GetPlayerLocatedChunk()
 	FVector2D Length = FVector2D( (ChunkVertexCount.X - 1) , (ChunkVertexCount.Y - 1) ) * CellSize; 
 	// ChunkCoord of the chunk where player is located.
 	FIntPoint PlayerLocatedChunkCoord = FIntPoint( int32(PlayerLocation.X / Length.X) , int32(PlayerLocation.Y / Length.Y) );
+	if(PlayerLocation.X < 0)
+	{
+		PlayerLocatedChunkCoord.X -= 1;
+	}
+	if (PlayerLocation.Y < 0)
+	{
+		PlayerLocatedChunkCoord.Y -= 1;
+	}
+
+	// UE_LOG(LogTemp, Display, TEXT("Player Current ChunkCoord : ( %d , %d )"), PlayerLocatedChunkCoord.X, PlayerLocatedChunkCoord.Y);
 
 	return PlayerLocatedChunkCoord;
 }

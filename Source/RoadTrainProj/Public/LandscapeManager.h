@@ -81,7 +81,7 @@ private:
 	// <ChunkCoord, ChunkSectionIndex>
 	// TMap<key, value>
 	TMap<FIntPoint, int32> ChunkStatus;
-	TArray<int32> RemovableChunks;
+	TMap<FIntPoint, int32> RemovableChunks;
 	TArray<FIntPoint> NeededChunks;
 
 private:
