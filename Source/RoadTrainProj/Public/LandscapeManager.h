@@ -57,10 +57,13 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	UMaterialInterface* LandscapeMaterial = nullptr;
 
-	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager|Height")
 	TArray<FPerlinNoiseVariables> PerlinNoiseLayers;
 
-	UPROPERTY(EditAnywhere, Category = "Landscape Manager|Debug")
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager|Height")
+	bool ShouldUseHeightGeneration = true;
+
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	bool ShouldDrawDebugPoint = true;
 
 
@@ -82,7 +85,7 @@ public:
 	void GenerateLandscape();
 	UFUNCTION(CallInEditor, Category = "Landscape Manager")
 	void Flush();
-	UFUNCTION(CallInEditor, Category = "Landscape Manager|Debug")
+	UFUNCTION(CallInEditor, Category = "Landscape Manager")
 	void RemoveDebugPoints();
 
 

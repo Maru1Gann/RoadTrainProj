@@ -170,7 +170,11 @@ void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 			Vertex = FVector( iX, iY, 0.f ) * CellSize + Offset; 
 
 			// PerlinNoise Based Height Generation.
-			Vertex.Z = GenerateHeight(FVector2D(Vertex));
+			if( ShouldUseHeightGeneration )
+			{
+				Vertex.Z = GenerateHeight(FVector2D(Vertex));
+			}
+			
 
 			BigVertices.Add(Vertex);
 			UV = FVector2D(Vertex) / CellSize; // convert to FVector2D
