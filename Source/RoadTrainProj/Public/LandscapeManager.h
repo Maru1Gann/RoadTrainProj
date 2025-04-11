@@ -4,7 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "ProceduralMeshComponent.h"
+#include "ChunkInfoVariables.h"
+
+#include "ProceduralMeshComponent.h" // FProcMeshTangent
 
 #include "LandscapeManager.generated.h"
 
@@ -15,12 +17,12 @@ struct FPerlinNoiseVariables
 {
 	GENERATED_BODY()
 
-	FPerlinNoiseVariables(float NoiseScale = 0, float Amplitude = 0, float Offset = 0)
-	{
-		this->NoiseScale = NoiseScale;
-		this->Amplitude = Amplitude;
-		this->Offset = Offset;
-	}
+	FPerlinNoiseVariables(
+		const float& NoiseScale = 0, 
+		const float& Amplitude = 0, 
+		const float& Offset = 0
+	) : NoiseScale(NoiseScale), Amplitude(Amplitude), Offset(Offset)
+	{};
 
 	UPROPERTY(EditAnywhere)
 	float NoiseScale;
@@ -103,11 +105,11 @@ private:
 
 	// params for create mesh section.
 	// initialize with GenerateChunkInfo.
-	TArray<FVector> Vertices;
+	TArray<int32> BigTriangles;
 	TArray<int32> Triangles;
-	TArray<FVector> Normals;
-	TArray<FVector2D> UVs;
-	TArray<FProcMeshTangent> Tangents;
+
+	TMap<FIntPoint, FChunkInfoVariables> ChunkInfos;
+
 
 	// Chunk Generation Order
 	TArray<FIntPoint> ChunkOrder;
@@ -135,15 +137,13 @@ private:
 
 	bool IsChunkInRadius(const FIntPoint StartChunk, const FIntPoint ChunkCoord, const float RadiusByLength);
 
-	FVector2D GetChunkCenter(const FIntPoint ChunkCoord);
-
-	void EmptyChunkInfo();
+	FVector2D GetChunkCenter(const FIntPoint& ChunkCoord);
 
 	FIntPoint GetPlayerLocatedChunk();
 	
-	void DrawDebugPoints();
+	void DrawDebugPoints(const FIntPoint& ChunkCoord = FIntPoint(0,0));
 
-	float GenerateHeight(const FVector2D Location);
+	float GenerateHeight(const FVector2D& Location);
 
 	
 };
