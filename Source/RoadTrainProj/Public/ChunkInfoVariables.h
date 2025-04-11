@@ -13,6 +13,7 @@ struct FChunkInfoVariables
 {
     GENERATED_BODY()
 
+public:
     FChunkInfoVariables(){};
 
     FChunkInfoVariables(

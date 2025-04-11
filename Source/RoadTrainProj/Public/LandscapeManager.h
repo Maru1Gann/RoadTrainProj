@@ -11,6 +11,9 @@
 #include "LandscapeManager.generated.h"
 
 
+
+class FLandscapeInfoGenerator;
+
 // we'll use this struct only in this header, so just declared it here.
 USTRUCT(Atomic)
 struct FPerlinNoiseVariables
@@ -40,6 +43,8 @@ UCLASS()
 class ROADTRAINPROJ_API ALandscapeManager : public AActor
 {
 	GENERATED_BODY()
+
+	friend class FLandscapeInfoGenerator;
 	
 public:	
 	// Sets default values for this actor's properties
@@ -80,7 +85,20 @@ public:
 
 	// Blueprint Callable Functions
 	UFUNCTION(BlueprintCallable)
+	bool TryUpdatePlayerLocatedChunk();
+	
+	UFUNCTION(BlueprintCallable)
+	void UpdateLandscapeInfoAsync();
+	UFUNCTION(BlueprintCallable)
+	void UpdateLandscapeAsync();
+	UFUNCTION(BlueprintCallable)
+	void UpdateLandscapeByChunkAsync();
+	
+	UFUNCTION(BlueprintCallable)
 	void UpdateLandscape();
+
+
+	
 
 	/* Editor Callable Functions */
 	UFUNCTION(CallInEditor, Category = "Landscape Manager")
@@ -110,7 +128,6 @@ private:
 
 	TMap<FIntPoint, FChunkInfoVariables> ChunkInfos;
 
-
 	// Chunk Generation Order
 	TArray<FIntPoint> ChunkOrder;
 
@@ -120,6 +137,7 @@ private:
 	TMap<FIntPoint, int32> ChunkStatus;
 	TMap<FIntPoint, int32> RemovableChunks;
 	TArray<FIntPoint> NeededChunks;
+	TArray<bool> NeededChunkInfoReady;
 
 private:
 	void GenerateChunkInfo(const FIntPoint ChunkCoord = FIntPoint(0,0));
@@ -132,6 +150,11 @@ private:
 
 	void DrawSingleChunk(const FIntPoint ChunkCoord);
 
+	/* Async Variables */
+
+	bool IsLandscapeUpdateDone = false;
+	bool IsLandscapeInfoReady = false;
+	int32 LastAbandonedIndex = 0;
 
 	/* Tools */
 
@@ -145,7 +168,27 @@ private:
 
 	float GenerateHeight(const FVector2D& Location);
 
+	FAsyncTask<FLandscapeInfoGenerator>* AsyncInfoGenerator;
 	
 };
 
 
+class FLandscapeInfoGenerator : public FNonAbandonableTask
+{
+	friend class FAsyncTask<FLandscapeInfoGenerator>;
+
+public:
+	FLandscapeInfoGenerator(ALandscapeManager* LandscapeManager):LandscapeManager(LandscapeManager) {};
+
+	void DoWork();
+
+	// Probably declares the Task to the TaskGraph
+	FORCEINLINE TStatId GetStatId() const 
+	{ 
+		RETURN_QUICK_DECLARE_CYCLE_STAT(FLandscapeInfoTask, STATGROUP_ThreadPoolAsyncTasks);
+	}
+
+
+private:
+	ALandscapeManager* LandscapeManager;
+};
