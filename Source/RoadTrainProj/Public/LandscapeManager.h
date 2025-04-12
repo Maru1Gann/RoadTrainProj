@@ -126,7 +126,8 @@ private:
 	TArray<int32> BigTriangles;
 	TArray<int32> Triangles;
 
-	TMap<FIntPoint, FChunkInfoVariables> ChunkInfos;
+	FChunkInfoVariables ChunkInfo;
+
 
 	// Chunk Generation Order
 	TArray<FIntPoint> ChunkOrder;

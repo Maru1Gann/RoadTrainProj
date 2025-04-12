@@ -615,16 +615,15 @@ void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
 		return;
 	}
 
-	FChunkInfoVariables* ChunkInfo = ChunkInfos.Find(ChunkCoord);
 	// Drawing Meshes
 	ProceduralMeshComponent->CreateMeshSection(
 		ChunkSectionIndex,
-		ChunkInfo->Vertices, 
+		ChunkInfo.Vertices, 
 		Triangles, 
-		ChunkInfo->Normals, 
-		ChunkInfo->UVs, 
+		ChunkInfo.Normals, 
+		ChunkInfo.UVs, 
 		TArray<FColor>(), 
-		ChunkInfo->Tangents, 
+		ChunkInfo.Tangents, 
 		true
 	);
 
@@ -707,15 +706,10 @@ FIntPoint ALandscapeManager::GetPlayerLocatedChunk()
 
 void ALandscapeManager::DrawDebugPoints(const FIntPoint& ChunkCoord)
 {
-	FChunkInfoVariables* ChunkInfo = ChunkInfos.Find(ChunkCoord);
-	if( ChunkInfo == nullptr )
+	
+	for (int i = 0; i < ChunkInfo.Vertices.Num(); i++)
 	{
-		return;
-	}
-
-	for (int i = 0; i < ChunkInfo->Vertices.Num(); i++)
-	{
-		DrawDebugPoint(this->GetWorld(), ChunkInfo->Vertices[i], 5, FColor::Red, true);
+		DrawDebugPoint(this->GetWorld(), ChunkInfo.Vertices[i], 5, FColor::Red, true);
 	}
 	
 	return;
