@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "ChunkInfoVariables.h"
 
 #include "ProceduralMeshComponent.h" // FProcMeshTangent
 
@@ -14,7 +13,7 @@
 
 class FLandscapeInfoGenerator;
 
-// we'll use this struct only in this header, so just declared it here.
+// Structs to use.
 USTRUCT(Atomic)
 struct FPerlinNoiseVariables
 {
@@ -54,26 +53,37 @@ public:
 	/* Public variables */
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	FIntPoint ChunkVertexCount;
-	
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	float CellSize;
-	
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	int RadiusByChunkCount;
-	
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	UMaterialInterface* LandscapeMaterial = nullptr;
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
+	bool ShouldDrawDebugPoint = true;
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
+	float ChunkUpdateFrequency = 1.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager|Height")
 	TArray<FPerlinNoiseVariables> PerlinNoiseLayers;
-
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager|Height")
 	bool ShouldUseHeightGeneration = true;
 
-	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
-	bool ShouldDrawDebugPoint = true;
+
+	void UpdateLandscape();
+
+	
+
+	/* Editor Callable Functions */
+	UFUNCTION(CallInEditor, Category = "Landscape Manager")
+	void GenerateLandscape();
+	UFUNCTION(CallInEditor, Category = "Landscape Manager")
+	void FlushForEditor();
+	UFUNCTION(CallInEditor, Category = "Landscape Manager")
+	void RemoveDebugPoints();
 
 
+	
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -83,34 +93,6 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 
-	// Blueprint Callable Functions
-	UFUNCTION(BlueprintCallable)
-	bool TryUpdatePlayerLocatedChunk();
-	
-	UFUNCTION(BlueprintCallable)
-	void UpdateLandscapeInfoAsync();
-	UFUNCTION(BlueprintCallable)
-	void UpdateLandscapeAsync();
-	UFUNCTION(BlueprintCallable)
-	void UpdateLandscapeByChunkAsync();
-	
-	UFUNCTION(BlueprintCallable)
-	void UpdateLandscape();
-
-
-	
-
-	/* Editor Callable Functions */
-	UFUNCTION(CallInEditor, Category = "Landscape Manager")
-	void GenerateLandscape();
-	UFUNCTION(CallInEditor, Category = "Landscape Manager")
-	void Flush();
-	UFUNCTION(CallInEditor, Category = "Landscape Manager")
-	void RemoveDebugPoints();
-
-
-	
-
 // Only private sections below
 
 private:
@@ -119,14 +101,20 @@ private:
 
 private:
 	int32 ChunkSectionIndex = 0;
-	FIntPoint PlayerLocatedChunk = FIntPoint(0,0);
+	FTimerHandle ChunkUpdateTimerHandle;
 
 	// params for create mesh section.
 	// initialize with GenerateChunkInfo.
 	TArray<int32> BigTriangles;
 	TArray<int32> Triangles;
 
-	FChunkInfoVariables ChunkInfo;
+	TArray<FVector> Vertices;
+	TArray<FVector> Normals;
+	TArray<FVector2D> UVs;
+	TArray<FProcMeshTangent> Tangents;
+
+	FIntPoint NeededChunk;
+	TPair<FIntPoint, int32> RemovableChunk;
 
 
 	// Chunk Generation Order
@@ -136,28 +124,29 @@ private:
 	// <ChunkCoord, ChunkSectionIndex>
 	// TMap<key, value>
 	TMap<FIntPoint, int32> ChunkStatus;
-	TMap<FIntPoint, int32> RemovableChunks;
-	TArray<FIntPoint> NeededChunks;
-	TArray<bool> NeededChunkInfoReady;
 
 private:
 	void GenerateChunkInfo(const FIntPoint ChunkCoord = FIntPoint(0,0));
 
 	void GenerateChunkOrder(const int RadiusByCount);
 
-	void UpdateLandscapeInfo(const FIntPoint ChunkCoord);
+	bool FindNeededChunk(FIntPoint& OutNeededChunk, const FIntPoint ChunkCoord);
 
-	void UpdateSingleChunk(const int32 SectionIndex, const FIntPoint ChunkCoord);
+	bool FindRemovableChunk(TPair<FIntPoint, int32>& OutRemovableChunk, const FIntPoint ChunkCoord);
+
+	void UpdateSingleChunk(const int32 SectionIndex);
 
 	void DrawSingleChunk(const FIntPoint ChunkCoord);
 
-	/* Async Variables */
 
-	bool IsLandscapeUpdateDone = false;
-	bool IsLandscapeInfoReady = false;
-	int32 LastAbandonedIndex = 0;
+	// flip flop
+	bool IsChunkInfoReady = false;
+	bool IsUpdatingChunk = false;
+
 
 	/* Tools */
+
+	void ResetChunkInfo();
 
 	bool IsChunkInRadius(const FIntPoint StartChunk, const FIntPoint ChunkCoord, const float RadiusByLength);
 
@@ -165,7 +154,7 @@ private:
 
 	FIntPoint GetPlayerLocatedChunk();
 	
-	void DrawDebugPoints(const FIntPoint& ChunkCoord = FIntPoint(0,0));
+	void DrawDebugPoints();
 
 	float GenerateHeight(const FVector2D& Location);
 

@@ -39,11 +39,16 @@ void ALandscapeManager::BeginPlay()
 	}
 
 	GenerateChunkOrder(this->RadiusByChunkCount);
-	ChunkInfos.Empty();
-
-	PlayerLocatedChunk = GetPlayerLocatedChunk();
 
 	GenerateLandscape();
+
+	GetWorldTimerManager().SetTimer(
+		ChunkUpdateTimerHandle, 
+		this, &ALandscapeManager::UpdateLandscape,
+		ChunkUpdateFrequency,
+		true,
+		0.01f
+	);
 }
 
 // Called every frame
@@ -53,185 +58,50 @@ void ALandscapeManager::Tick(float DeltaTime)
 
 }
 
-// returns false if player's chunk location didn't change.
-bool ALandscapeManager::TryUpdatePlayerLocatedChunk()
-{
-	FIntPoint PlayerCurrentChunk = GetPlayerLocatedChunk();
-
-	// if location is same as last call, return.
-	if ( PlayerLocatedChunk == PlayerCurrentChunk )
-	{
-		return false;
-	}
-	else
-	{
-		PlayerLocatedChunk = PlayerCurrentChunk;
-		return true;
-	}
-}
-
-// BlueprintCallable
-// We'll call this function by timer event in BP_LandscapeManager
-// Call TryUpdatePlayerLocatedChunk before this.
-void ALandscapeManager::UpdateLandscapeInfoAsync()
-{
-	if( IsLandscapeUpdateDone == false )
-	{
-		UE_LOG(LogTemp, Display, TEXT("Hit LandscapeUpdate not done"));
-		return;
-	}
-
-	// Check DoWork() at bottom.
-	AsyncInfoGenerator->StartBackgroundTask();
-	AsyncInfoGenerator->EnsureCompletion();
-
-	UE_LOG(LogTemp, Display, TEXT("Landscape Info AsyncTask Done!"));
-
-	return;
-}
-
-void ALandscapeManager::UpdateLandscapeAsync()
-{
-	if( IsLandscapeInfoReady == false )
-	{
-		return;
-	}
-
-	IsLandscapeUpdateDone = false;
-
-	// iterator of RemovableChunks
-	auto Iter = RemovableChunks.CreateConstIterator();
-	for( int i = 0; i < LastAbandonedIndex; i++ )
-	{
-		++Iter;
-	}
-
-	for( int i = LastAbandonedIndex; i < NeededChunks.Num(); i++ )
-	{
-		if( NeededChunkInfoReady[i] == false )
-		{
-			LastAbandonedIndex = i;
-			UE_LOG(LogTemp, Display, TEXT(" Hit ChunkInfoReady False "));
-			return;
-		}
-		else
-		{
-			UpdateSingleChunk( Iter.Value() , NeededChunks[i] );
-			ChunkStatus.Remove( Iter.Key() );
-			ChunkStatus.Add( NeededChunks[i], Iter.Value() );
-			++Iter;
-		}
-	}
-
-	// fixes bad collision issues
-	ProceduralMeshComponent->ClearCollisionConvexMeshes();
-	
-	// Done updating
-	UE_LOG(LogTemp, Display, TEXT("Landscape Update Done!"));
-	LastAbandonedIndex = 0;
-	IsLandscapeInfoReady = false;
-	IsLandscapeUpdateDone = true;
-	ChunkInfos.Reset();
-	return;
-}
-
-void ALandscapeManager::UpdateLandscapeByChunkAsync()
-{
-	if( IsLandscapeInfoReady == false )
-	{
-		return;
-	}
-	IsLandscapeUpdateDone = false;
-
-	// iterator of RemovableChunks
-	auto Iter = RemovableChunks.CreateConstIterator();
-	for( int i = 0; i < LastAbandonedIndex; i++ )
-	{
-		++Iter;
-	}
-
-	if( NeededChunkInfoReady[LastAbandonedIndex] == false )
-	{
-		UE_LOG(LogTemp, Display, TEXT(" Hit ChunkInfoReady False "));
-		return;
-	}
-	else
-	{
-		UpdateSingleChunk( Iter.Value() , NeededChunks[LastAbandonedIndex] );
-		ChunkStatus.Remove( Iter.Key() );
-		ChunkStatus.Add( NeededChunks[LastAbandonedIndex], Iter.Value() );
-		++Iter;
-		++LastAbandonedIndex;
-	}
-
-	// fixes bad collision issues
-	ProceduralMeshComponent->ClearCollisionConvexMeshes();
-	
-	// Done updating
-	if(LastAbandonedIndex == NeededChunks.Num())
-	{
-		UE_LOG(LogTemp, Display, TEXT("Landscape Update Done!"));
-		LastAbandonedIndex = 0;
-		IsLandscapeInfoReady = false;
-		IsLandscapeUpdateDone = true;
-		ChunkInfos.Reset();
-	}
-	return;
-}
-
 
 
 void ALandscapeManager::UpdateLandscape()
 {
 
-	FIntPoint PlayerCurrentChunk = GetPlayerLocatedChunk();
+	// --------Background Thread-------- START
 
-	// if location is same as last call, return.
-	if ( PlayerLocatedChunk == PlayerCurrentChunk )
+	FIntPoint PlayerLocatedChunk = GetPlayerLocatedChunk();
+
+	// Member variables for multithreading
+	// FIntPoint NeededChunk;
+	// TPair<FIntPoint, int32> RemovableChunk;
+
+	if ( IsUpdatingChunk == true )
 	{
 		return;
 	}
-	else
+
+	// NeededChunk and RemovableChunk are OutParameters
+	if( FindNeededChunk( NeededChunk, PlayerLocatedChunk ) == false || FindRemovableChunk( RemovableChunk, PlayerLocatedChunk ) == false )
 	{
-		PlayerLocatedChunk = PlayerCurrentChunk;
+		return;
 	}
 
-	// Updates Needed & Removable Chunks
-	UpdateLandscapeInfo( PlayerCurrentChunk );
+	GenerateChunkInfo(NeededChunk);
 
+	IsChunkInfoReady = true;
 
-	// Generate Infos beforehand.
-	for(int i = 0; i < NeededChunks.Num(); i++)
-	{
-		GenerateChunkInfo(NeededChunks[i]);
-	}
+	// --------Background Thread-------- END
 
+	IsUpdatingChunk = true;
 
-	// update chunks.
-	int i = 0;
-	for (TPair<FIntPoint, int32> Elem : RemovableChunks )
-	{
-		// Elem.Key == ChunkCoord
-		// Elem.Value == ChunkSectionIndex
+	UpdateSingleChunk(RemovableChunk.Value);
 
-		FIntPoint NeededChunkCoord = NeededChunks[i];
-		// pick the removable one (Elem.Value) and move it to (NeededChunkCoord)
-		UpdateSingleChunk( Elem.Value, NeededChunkCoord );
-		
-		// Update ChunkStatus
-		ChunkStatus.Remove( Elem.Key );
-		ChunkStatus.Add( NeededChunkCoord, Elem.Value );
-
-		i++;
-	}
-
-
+	ChunkStatus.Remove(RemovableChunk.Key);
+	ChunkStatus.Add(NeededChunk, RemovableChunk.Value);
+	
 	// fixes bad collision issues
 	ProceduralMeshComponent->ClearCollisionConvexMeshes();
 
-	ChunkInfos.Reset();
+	IsUpdatingChunk = false;
+	IsChunkInfoReady = false;
 
-	UE_LOG(LogTemp, Display, TEXT( "Landscape Updated" ) );
+	UE_LOG(LogTemp, Display, TEXT("(%d, %d) : Landscape Updated"), NeededChunk.X, NeededChunk.Y);
 
 	return;
 }
@@ -242,33 +112,32 @@ void ALandscapeManager::UpdateLandscape()
 void ALandscapeManager::GenerateLandscape()
 {
 
-	Flush();
+	FlushForEditor();
 
 	GenerateChunkOrder(this->RadiusByChunkCount);
 
-	for (int i = 0; i < ChunkOrder.Num(); i++)
+	for ( int i = 0; i < ChunkOrder.Num(); i++ )
 	{
 		GenerateChunkInfo( ChunkOrder[i] );
-	}
-
-	for (int i = 0; i< ChunkOrder.Num(); i++)
-	{
 		DrawSingleChunk( ChunkOrder[i] );
 	}
-
-	ChunkInfos.Reset();
-	IsLandscapeUpdateDone = true;
 
 	return;
 }
 
-void ALandscapeManager::Flush()
+void ALandscapeManager::FlushForEditor()
 {
 	ProceduralMeshComponent->ClearAllMeshSections();
 	FlushPersistentDebugLines(this->GetWorld());
-	ChunkInfos.Empty();
+
 	BigTriangles.Empty();
 	Triangles.Empty();
+
+	Vertices.Empty();
+	Normals.Empty();
+	UVs.Empty();
+	Tangents.Empty();
+
 	ChunkSectionIndex = 0;
 
 	return;
@@ -292,12 +161,9 @@ void ALandscapeManager::RemoveDebugPoints()
 
 void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 {
-	// this should not happen, but if it already exists in the map,
-	if( ChunkInfos.Contains(ChunkCoord) )
-	{
-		return;
-	}
 
+	// Clear TArrays.
+	ResetChunkInfo();
 
 	// Offset is ChunkCoordination * ChunkVertexCount * CellSize
 	FVector Offset = 
@@ -317,10 +183,6 @@ void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 	TArray<FVector2D> BigUVs;
 	FVector2D UV;
 
-	TArray<FVector> Vertices;
-	TArray<FVector> Normals;
-	TArray<FVector2D> UVs;
-	TArray<FProcMeshTangent> Tangents;
 
 	// Calculations for BigVertices. BigUVs also since it's same.
 	for (int32 iY = -1;  iY <= ChunkVertexCount.Y; iY++) // this goes from -1 ~ (length + 1) == length + 2
@@ -343,14 +205,15 @@ void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 		}
 	}
 
-
 	// BigTriangles are just abstract coordinates, it should go from 0 to ChunkVertexCount + 1 ( == -1 to ChunkVertexCount )
 	// !!We don't use the last vertex as startingpoint!! So (ChunkVertexCount + 1) - 1
+
 
 	int32 Row = ChunkVertexCount.X + 2;
 	// make triangles only if it's empty. Since they are always same. No need to make it twice.
 	if( BigTriangles.IsEmpty() )
 	{
+
 		for (int32 iY = 0; iY <= ChunkVertexCount.Y; iY++)
 		{
 			for (int32 iX = 0; iX <= ChunkVertexCount.X; iX++)
@@ -369,6 +232,7 @@ void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 				BigTriangles.Add( (iX+1) 	+ (iY * Row) 		);
 			}
 		}
+
 	}
 
 
@@ -396,6 +260,7 @@ void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 		}
 	}
 
+
 	// Triangles
 	// we don't use the last vertex. so CunkVertexCount - 1.
 	// starts from 0 so ChunkVertexCount - 1.
@@ -403,6 +268,7 @@ void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 
 	if ( Triangles.IsEmpty() )
 	{
+
 		Row = ChunkVertexCount.X;
 		for (int32 iY = 0; iY <= ChunkVertexCount.Y - 2; iY++)
 		{
@@ -417,14 +283,11 @@ void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
 				Triangles.Add( (iX+1)	+ (iY * Row) 		);
 			}
 		}
+
 	}
-	
 
-	// Add the Info to ChunkInfos array
 
-	ChunkInfos.Emplace(ChunkCoord, FChunkInfoVariables(Vertices, Normals, UVs, Tangents));
-
-	// UE_LOG(LogTemp, Display, TEXT("(%d, %d) : Generated Chunk Info"), ChunkCoord.X, ChunkCoord.Y);
+	UE_LOG(LogTemp, Display, TEXT("(%d, %d) : Generated Chunk Info"), ChunkCoord.X, ChunkCoord.Y);
 	return;
 }
 
@@ -529,76 +392,61 @@ void ALandscapeManager::GenerateChunkOrder(const int RadiusByCount)
 	return;
 }
 
-void ALandscapeManager::UpdateLandscapeInfo(const FIntPoint ChunkCoord)
+bool ALandscapeManager::FindNeededChunk(FIntPoint& OutNeededChunk, const FIntPoint ChunkCoord)
 {
-	// This function updates Needed & Removable Chunks.
+	// OutNeededChunk is OutParameter. Its value will change
 
-	// Possible Optimizations : We don't need to create collisions for most of the chunks.
+	FIntPoint CurrentChunk = GetPlayerLocatedChunk();
 
-	NeededChunks.Reset();
-	RemovableChunks.Reset();
-	TMap<FIntPoint, int32> KeepableChunks;
-
-	for(int i = 0; i < ChunkOrder.Num(); i++)
+	for( int i = 0; i < ChunkOrder.Num(); i++ )
 	{
-		// Add Offset (starting point of current position == ChunkCoord)
-		FIntPoint CurrentChunk = ChunkOrder[i] + ChunkCoord;
-
-		// Needed Chunks
-		if ( ChunkStatus.Contains(CurrentChunk) == false )
+		FIntPoint Iterator = CurrentChunk + ChunkOrder[i];
+		if( ChunkStatus.Contains( Iterator ) == false )
 		{
-			NeededChunks.Emplace(CurrentChunk);
-		}
-		else // NeededChunk already exists
-		{
-			KeepableChunks.Emplace( CurrentChunk, ChunkStatus[CurrentChunk] );
+			OutNeededChunk = Iterator;
+			return true;
 		}
 	}
 
-	// find Removable Chunks
-	for( TPair<FIntPoint, int32> Elem : ChunkStatus )
-	{
-		if( KeepableChunks.Contains( Elem.Key ) == false )
-		{
-			RemovableChunks.Add( Elem.Key, Elem.Value );
-		}
-
-	}
-	
-
-	// FlipFlop
-	IsLandscapeInfoReady = true;
-
-	// Debug
-	if( RemovableChunks.Num() != NeededChunks.Num() )
-	{
-		UE_LOG(LogTemp, Warning, TEXT(" RemovableChunks.Num() != NeededChunks.Num() "));
-	}
-
-
-	return;
+	return false;
 }
 
-void ALandscapeManager::UpdateSingleChunk(const int32 SectionIndex, const FIntPoint ChunkCoord)
+bool ALandscapeManager::FindRemovableChunk(TPair<FIntPoint, int32>& OutRemovableChunk, const FIntPoint ChunkCoord)
 {
-	// Make sure SectionIndex_Section is not in KeepableChunks before usage!
-	// For Multithreading purposes, we GenerateChunkInfo outside & before this function.
-	// this funtion should only be run on main thread.
+	// OutSectionIndex is Out Parameter.
 
-	FChunkInfoVariables* ChunkInfo = ChunkInfos.Find(ChunkCoord);
-	ProceduralMeshComponent->UpdateMeshSection(
-		SectionIndex, 
-		ChunkInfo->Vertices, 
-		ChunkInfo->Normals, 
-		ChunkInfo->UVs, 
-		TArray<FColor>(), 
-		ChunkInfo->Tangents 
-	);
+	float RadiusByLength = RadiusByChunkCount * ( (ChunkVertexCount.X - 1) * CellSize );
+
+	for ( auto& Elem : ChunkStatus )
+	{
+		if( IsChunkInRadius(ChunkCoord, Elem.Key, RadiusByLength ) == false )
+		{
+			OutRemovableChunk = {Elem.Key, Elem.Value};
+			return true;
+		}
+	}
 	
+	return false;
+}
+
+void ALandscapeManager::UpdateSingleChunk(const int32 SectionIndex)
+{
+	// We take Mesh of given SectionIndex to new ChunkCoord.
+	// Need information generated.
+
+	ProceduralMeshComponent->UpdateMeshSection(
+		SectionIndex,
+		Vertices, 
+		Normals, 
+		UVs, 
+		TArray<FColor>(), 
+		Tangents 
+	);
+
 	// Drawing DebugPoint
 	if(ShouldDrawDebugPoint)
 	{
-		DrawDebugPoints(ChunkCoord);
+		DrawDebugPoints();
 	}
 	// debug
 
@@ -618,12 +466,12 @@ void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
 	// Drawing Meshes
 	ProceduralMeshComponent->CreateMeshSection(
 		ChunkSectionIndex,
-		ChunkInfo.Vertices, 
+		Vertices, 
 		Triangles, 
-		ChunkInfo.Normals, 
-		ChunkInfo.UVs, 
+		Normals, 
+		UVs, 
 		TArray<FColor>(), 
-		ChunkInfo.Tangents, 
+		Tangents, 
 		true
 	);
 
@@ -646,7 +494,7 @@ void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
 	// Drawing DebugPoint
 	if(ShouldDrawDebugPoint)
 	{
-		DrawDebugPoints(ChunkCoord);
+		DrawDebugPoints();
 	}
 	// debug
 
@@ -656,6 +504,15 @@ void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
 
 /* Tools */
 
+void ALandscapeManager::ResetChunkInfo()
+{
+	Vertices.Reset();
+	Normals.Reset();
+	UVs.Reset();
+	Tangents.Reset();
+	
+	return;
+}
 
 bool ALandscapeManager::IsChunkInRadius(const FIntPoint StartChunk, const FIntPoint CurrentChunkCoord, const float RadiusByLength)
 {
@@ -690,6 +547,7 @@ FIntPoint ALandscapeManager::GetPlayerLocatedChunk()
 	FVector2D Length = FVector2D( (ChunkVertexCount.X - 1) , (ChunkVertexCount.Y - 1) ) * CellSize; 
 	// ChunkCoord of the chunk where player is located.
 	FIntPoint PlayerLocatedChunkCoord = FIntPoint( int32(PlayerLocation.X / Length.X) , int32(PlayerLocation.Y / Length.Y) );
+
 	if(PlayerLocation.X < 0)
 	{
 		PlayerLocatedChunkCoord.X -= 1;
@@ -704,12 +562,12 @@ FIntPoint ALandscapeManager::GetPlayerLocatedChunk()
 	return PlayerLocatedChunkCoord;
 }
 
-void ALandscapeManager::DrawDebugPoints(const FIntPoint& ChunkCoord)
+void ALandscapeManager::DrawDebugPoints()
 {
 	
-	for (int i = 0; i < ChunkInfo.Vertices.Num(); i++)
+	for (int i = 0; i < Vertices.Num(); i++)
 	{
-		DrawDebugPoint(this->GetWorld(), ChunkInfo.Vertices[i], 5, FColor::Red, true);
+		DrawDebugPoint(this->GetWorld(), Vertices[i], 5, FColor::Red, true);
 	}
 	
 	return;
@@ -736,16 +594,5 @@ float ALandscapeManager::GenerateHeight(const FVector2D& Location)
 
 void FLandscapeInfoGenerator::DoWork()
 {
-	LandscapeManager->UpdateLandscapeInfo(LandscapeManager->PlayerLocatedChunk);
 
-	LandscapeManager->NeededChunkInfoReady.Reset();
-	LandscapeManager->NeededChunkInfoReady.Init(false, LandscapeManager->NeededChunks.Num());
-
-	for(int i = 0; i < LandscapeManager->NeededChunks.Num(); i++)
-	{
-		LandscapeManager->GenerateChunkInfo( LandscapeManager->NeededChunks[i] );
-		LandscapeManager->NeededChunkInfoReady[i] = true;
-	}
-	
-	return;
 }
