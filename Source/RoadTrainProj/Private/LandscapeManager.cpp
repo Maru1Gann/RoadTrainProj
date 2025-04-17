@@ -57,7 +57,7 @@ void ALandscapeManager::BeginPlay()
 			ChunkUpdateTimerHandle, 
 			this, 
 			&ALandscapeManager::UpdateLandscape,
-			ChunkUpdateFrequency,
+			ChunkUpdatePeriod,
 			true,
 			0.01f
 		);
@@ -72,7 +72,7 @@ void ALandscapeManager::BeginPlay()
 			AsyncChunkInfoUpdateTimerHandle,
 			this,
 			&ALandscapeManager::UpdateChunkInfoAsync,
-			AsyncChunkInfoUpdateFrequency,
+			AsyncChunkInfoUpdatePeriod,
 			true,
 			0.01f
 		);
@@ -82,7 +82,7 @@ void ALandscapeManager::BeginPlay()
 			AsyncChunkUpdateTimerHandle,
 			this,
 			&ALandscapeManager::UpdateLandscapeAsync,
-			AsyncChunkUpdateFrequency,
+			AsyncChunkUpdatePeriod,
 			true,
 			0.02f
 		);

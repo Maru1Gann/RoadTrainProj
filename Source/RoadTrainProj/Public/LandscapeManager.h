@@ -65,11 +65,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager|ChunkUpdate")
 	bool ShouldUseMultithreading = true;
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager|ChunkUpdate")
-	float ChunkUpdateFrequency = 1.0f;
+	float ChunkUpdatePeriod = 1.0f;
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager|ChunkUpdate")
-	float AsyncChunkInfoUpdateFrequency = 0.1f;
+	float AsyncChunkInfoUpdatePeriod = 0.1f;
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager|ChunkUpdate")
-	float AsyncChunkUpdateFrequency = 0.2f;
+	float AsyncChunkUpdatePeriod = 0.2f;
 	
 
 
