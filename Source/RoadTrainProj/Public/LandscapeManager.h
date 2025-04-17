@@ -61,8 +61,17 @@ public:
 	UMaterialInterface* LandscapeMaterial = nullptr;
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
 	bool ShouldDrawDebugPoint = true;
-	UPROPERTY(EditAnywhere, Category = "Landscape Manager")
+
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager|ChunkUpdate")
+	bool ShouldUseMultithreading = true;
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager|ChunkUpdate")
 	float ChunkUpdateFrequency = 1.0f;
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager|ChunkUpdate")
+	float AsyncChunkInfoUpdateFrequency = 0.1f;
+	UPROPERTY(EditAnywhere, Category = "Landscape Manager|ChunkUpdate")
+	float AsyncChunkUpdateFrequency = 0.2f;
+	
+
 
 	UPROPERTY(EditAnywhere, Category = "Landscape Manager|Height")
 	TArray<FPerlinNoiseVariables> PerlinNoiseLayers;
@@ -70,9 +79,14 @@ public:
 	bool ShouldUseHeightGeneration = true;
 
 
+
+	// FUNCTIONS
+
 	void UpdateLandscape();
 
-	
+	void UpdateChunkInfoAsync();
+
+	void UpdateLandscapeAsync();
 
 	/* Editor Callable Functions */
 	UFUNCTION(CallInEditor, Category = "Landscape Manager")
@@ -102,6 +116,8 @@ private:
 private:
 	int32 ChunkSectionIndex = 0;
 	FTimerHandle ChunkUpdateTimerHandle;
+	FTimerHandle AsyncChunkInfoUpdateTimerHandle;
+	FTimerHandle AsyncChunkUpdateTimerHandle;
 
 	// params for create mesh section.
 	// initialize with GenerateChunkInfo.
@@ -141,7 +157,7 @@ private:
 
 	// flip flop
 	bool IsChunkInfoReady = false;
-	bool IsUpdatingChunk = false;
+	bool IsChunkInfoGenerating = false;
 
 
 	/* Tools */
@@ -158,17 +174,17 @@ private:
 
 	float GenerateHeight(const FVector2D& Location);
 
-	FAsyncTask<FLandscapeInfoGenerator>* AsyncInfoGenerator;
+	FAsyncTask<FLandscapeInfoGenerator>* AsyncInfoTask;
 	
 };
 
 
 class FLandscapeInfoGenerator : public FNonAbandonableTask
 {
-	friend class FAsyncTask<FLandscapeInfoGenerator>;
+	friend class FAutoDeleteAsyncTask< FLandscapeInfoGenerator >;
 
 public:
-	FLandscapeInfoGenerator(ALandscapeManager* LandscapeManager):LandscapeManager(LandscapeManager) {};
+	FLandscapeInfoGenerator(ALandscapeManager* LandscapeManager) : LandscapeManager(LandscapeManager) {};
 
 	void DoWork();
 

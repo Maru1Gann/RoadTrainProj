@@ -23,7 +23,7 @@ ALandscapeManager::ALandscapeManager()
 	Triangles.Empty();
 	BigTriangles.Empty();
 
-	AsyncInfoGenerator = new FAsyncTask<FLandscapeInfoGenerator>(this);
+	AsyncInfoTask = new FAsyncTask<FLandscapeInfoGenerator>(this);
 }
 
 // Called when the game starts or when spawned
@@ -38,17 +38,61 @@ void ALandscapeManager::BeginPlay()
 		UE_LOG(LogTemp, Warning, TEXT("LandScapeManager_BeginPlay : PlayerCharacter nullptr"));
 	}
 
+	// Initial actions.
+
 	GenerateChunkOrder(this->RadiusByChunkCount);
 
 	GenerateLandscape();
 
-	GetWorldTimerManager().SetTimer(
-		ChunkUpdateTimerHandle, 
-		this, &ALandscapeManager::UpdateLandscape,
-		ChunkUpdateFrequency,
-		true,
-		0.01f
-	);
+
+	// Setting Timers
+
+
+	// ↓ Version without multithreading
+	
+	if( ShouldUseMultithreading == false )
+	{
+
+		GetWorldTimerManager().SetTimer(
+			ChunkUpdateTimerHandle, 
+			this, 
+			&ALandscapeManager::UpdateLandscape,
+			ChunkUpdateFrequency,
+			true,
+			0.01f
+		);
+
+	}
+	else // With Multithreading ↓
+	{
+		
+
+		// Info Generation task
+		GetWorldTimerManager().SetTimer(
+			AsyncChunkInfoUpdateTimerHandle,
+			this,
+			&ALandscapeManager::UpdateChunkInfoAsync,
+			AsyncChunkInfoUpdateFrequency,
+			true,
+			0.01f
+		);
+
+		// Chunk Updating task (MainThread)d
+		GetWorldTimerManager().SetTimer(
+			AsyncChunkUpdateTimerHandle,
+			this,
+			&ALandscapeManager::UpdateLandscapeAsync,
+			AsyncChunkUpdateFrequency,
+			true,
+			0.02f
+		);
+
+
+	}	// END of else
+
+
+	return;
+
 }
 
 // Called every frame
@@ -65,16 +109,16 @@ void ALandscapeManager::UpdateLandscape()
 
 	// --------Background Thread-------- START
 
+	// if ( IsChunkInfoReady == true )
+	// {
+	// 	return;
+	// }
+
 	FIntPoint PlayerLocatedChunk = GetPlayerLocatedChunk();
 
 	// Member variables for multithreading
-	// FIntPoint NeededChunk;
-	// TPair<FIntPoint, int32> RemovableChunk;
-
-	if ( IsUpdatingChunk == true )
-	{
-		return;
-	}
+	// 		FIntPoint NeededChunk;
+	// 		TPair<FIntPoint, int32> RemovableChunk;
 
 	// NeededChunk and RemovableChunk are OutParameters
 	if( FindNeededChunk( NeededChunk, PlayerLocatedChunk ) == false || FindRemovableChunk( RemovableChunk, PlayerLocatedChunk ) == false )
@@ -84,11 +128,15 @@ void ALandscapeManager::UpdateLandscape()
 
 	GenerateChunkInfo(NeededChunk);
 
-	IsChunkInfoReady = true;
+	// IsChunkInfoReady = true;
 
 	// --------Background Thread-------- END
 
-	IsUpdatingChunk = true;
+	// if( IsChunkInfoReady == false )
+	// {
+	// 	return;
+	// }
+	
 
 	UpdateSingleChunk(RemovableChunk.Value);
 
@@ -98,10 +146,73 @@ void ALandscapeManager::UpdateLandscape()
 	// fixes bad collision issues
 	ProceduralMeshComponent->ClearCollisionConvexMeshes();
 
-	IsUpdatingChunk = false;
-	IsChunkInfoReady = false;
+	// IsChunkInfoReady = false;
 
 	UE_LOG(LogTemp, Display, TEXT("(%d, %d) : Landscape Updated"), NeededChunk.X, NeededChunk.Y);
+
+	return;
+}
+
+
+void ALandscapeManager::UpdateChunkInfoAsync()
+{
+	if ( IsChunkInfoGenerating == true )
+	{
+		UE_LOG(LogTemp, Display, TEXT("MultiThreading flag hit : ChunkInfo still Generating"));
+		return;
+	}
+	
+	if ( IsChunkInfoReady == true )
+	{
+		return;
+	}
+
+	// Check DoWork() at bottom
+	
+	if( AsyncInfoTask->IsDone() )
+	{
+		AsyncInfoTask->EnsureCompletion();
+		AsyncInfoTask->StartBackgroundTask();
+	}
+	else
+	{
+		//UE_LOG(LogTemp, Display, TEXT(" AsyncTask still running "));
+	}
+	
+
+	// when task done ↓
+	// IsChunkInfoGenerating 	set to false in DoWork()
+	// IsChunkInfoReady 		set to true in DoWork()
+
+	return;
+}
+
+void ALandscapeManager::UpdateLandscapeAsync()
+{
+	if ( IsChunkInfoGenerating == true )
+	{
+		UE_LOG(LogTemp, Display, TEXT("Main Thread flag hit : ChunkInfo still generating"));
+		return;
+	}
+
+	if( IsChunkInfoReady == false )
+	{
+		return;
+	}
+
+
+	UpdateSingleChunk(RemovableChunk.Value);
+
+	ChunkStatus.Remove(RemovableChunk.Key);
+	ChunkStatus.Add(NeededChunk, RemovableChunk.Value);
+	
+	// fixes bad collision issues
+	ProceduralMeshComponent->ClearCollisionConvexMeshes();
+
+	UE_LOG(LogTemp, Display, TEXT("(%d, %d) : Chunk Updated"), NeededChunk.X, NeededChunk.Y);
+
+	IsChunkInfoReady = false;
+
 
 	return;
 }
@@ -594,5 +705,32 @@ float ALandscapeManager::GenerateHeight(const FVector2D& Location)
 
 void FLandscapeInfoGenerator::DoWork()
 {
+	ALandscapeManager* LMP = LandscapeManager;
 
+	LMP->IsChunkInfoGenerating = true;
+
+	FIntPoint& NeededChunk = LMP->NeededChunk;
+	TPair<FIntPoint, int32>& RemovableChunk = LMP->RemovableChunk;
+
+	FIntPoint PlayerLocatedChunk = LMP->GetPlayerLocatedChunk();
+
+	// NeededChunk and RemovableChunk are OutParameters
+	// try finding Needed and Removable chunk set.
+
+
+	if( LMP->FindNeededChunk( NeededChunk, PlayerLocatedChunk ) == false 
+		|| 
+		LMP->FindRemovableChunk( RemovableChunk, PlayerLocatedChunk ) == false )
+	{
+
+		LMP->IsChunkInfoGenerating = false;
+		return;
+	}
+
+	LMP->GenerateChunkInfo(NeededChunk);
+
+	LMP->IsChunkInfoReady = true;
+	LMP->IsChunkInfoGenerating = false;
+
+	return;
 }
