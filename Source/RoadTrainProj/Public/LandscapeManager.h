@@ -7,35 +7,14 @@
 
 #include "ProceduralMeshComponent.h" // FProcMeshTangent
 
+#include "PerlinNoiseVariables.h"
+
 #include "LandscapeManager.generated.h"
 
 
 
+
 class FLandscapeInfoGenerator;
-
-// Structs to use.
-USTRUCT(Atomic)
-struct FPerlinNoiseVariables
-{
-	GENERATED_BODY()
-
-	FPerlinNoiseVariables(
-		const float& NoiseScale = 0, 
-		const float& Amplitude = 0, 
-		const float& Offset = 0
-	) : NoiseScale(NoiseScale), Amplitude(Amplitude), Offset(Offset)
-	{};
-
-	UPROPERTY(EditAnywhere)
-	float NoiseScale;
-	
-	UPROPERTY(EditAnywhere)
-	float Amplitude;
-
-	UPROPERTY(EditAnywhere)
-	float Offset;
-
-};
 
 
 UCLASS()

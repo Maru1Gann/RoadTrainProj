@@ -691,7 +691,7 @@ float ALandscapeManager::GenerateHeight(const FVector2D& Location)
 
 	for ( int i = 0; i < PerlinNoiseLayers.Num(); i++)
 	{
-		float NoiseScale = PerlinNoiseLayers[i].NoiseScale;
+		float NoiseScale = 1 / PerlinNoiseLayers[i].Frequency;
 		float Amplitude = PerlinNoiseLayers[i].Amplitude;
 		float Offset = PerlinNoiseLayers[i].Offset;
 		height += FMath::PerlinNoise2D(Location * NoiseScale + FVector2d(0.1f, 0.1f) + Offset) * Amplitude;
