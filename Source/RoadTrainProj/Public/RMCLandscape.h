@@ -28,18 +28,33 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 
-	UPROPERTY(EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 1, ClampMin = "10.0", Step = "10.0", Units = "cm"))
+	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 1, ClampMin = "10.0", Step = "10.0", Units = "cm") )
 	float VertexSpacing = 300.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 2, ClampMin = "2", Step = "2"))
+	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 2, ClampMin = "2", Step = "2") )
 	int32 VerticesPerChunk = 10;
 
-	UPROPERTY(EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 3, ClampMin = "0", Step = "1"))
+	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 3, ClampMin = "0", Step = "1") )
 	int32 ChunkRadius = 5;
 
-	UPROPERTY(EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 4) )
+	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 4, ClampMin = "0.0", Step = "10.0") )
+	float TextureSize = 300.0f;
+
+	// for debugging purposes
+	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 5) )
+	int32 ChunkCount = 0;
+
+	UPROPERTY( EditAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 1) )
+	bool ShouldGenerateHeight = true;
+
+	UPROPERTY( EditAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 2) )
 	TArray<FPerlinNoiseVariables> PerlinNoiseLayers;
 
+
+
+
+	UFUNCTION( CallInEditor, Category = "Chunks" )
+	void GenerateLandscape();
 
 
 protected:
@@ -50,11 +65,17 @@ protected:
 
 private:
 	// Store all the chunks HERE
-	TMap<FIntPoint, ARealtimeMeshActor*> ChunkGrid;
+	TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
+
+	void AddChunk(const FIntPoint& ChunkCoord);
+
+
+	// Shared (multithreading)
+	RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+	void GenerateStreamSet(const FIntPoint& ChunkCoord);
 	
 	// Sprial from center for generation priority
 	TArray<FIntPoint> ChunkOrder;
-
 	// Spiral Init.
 	void GenerateChunkOrder();
 
@@ -73,5 +94,7 @@ private:
 
 	// Generate Height with PerlinNoise
 	float GenerateHeight(const FVector2D& Location);
+
+	void RemoveChunk(const FIntPoint& ChunkCoord);
 
 };

@@ -20,7 +20,7 @@ struct FPerlinNoiseVariables
 	UPROPERTY( EditAnywhere, meta = (ClampMin = "0.0", ClampMax = "20000.0", Step = "1000.0", units="cm") )
 	float Frequency;
 	
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", ClampMax = "200000.0", Step = "1000.0", units="cm") )
+	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", ClampMax = "200000.0", Step = "100.0", units="cm") )
 	float Amplitude; // max wave amplitude
 
 	UPROPERTY(EditAnywhere)
