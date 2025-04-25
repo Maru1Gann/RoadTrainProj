@@ -33,3 +33,8 @@ OR
 
 12시 - Local Rotation y축 -30도 회전 --> ( 90 -60 -90 )
 기준 World Rotation으로 y축 회전
+
+
+0426
+부모 컴퍼넌트 -> world rotation x 30
+자식 sun moon -> relavtive Rotation y축 회전
