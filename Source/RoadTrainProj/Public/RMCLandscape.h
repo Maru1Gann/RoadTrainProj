@@ -55,6 +55,8 @@ public:
 
 	UFUNCTION( CallInEditor, Category = "Chunks" )
 	void GenerateLandscape();
+	UFUNCTION( CallInEditor, Category = "Chunks" )
+	void RemoveLandscape();
 
 
 protected:

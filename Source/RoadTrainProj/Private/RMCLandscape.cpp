@@ -9,6 +9,8 @@ ARMCLandscape::ARMCLandscape()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = false;
+	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+
 }
 
 // Correspond to BP_ConstructionScript
@@ -42,20 +44,36 @@ void ARMCLandscape::Tick(float DeltaTime)
 
 void ARMCLandscape::GenerateLandscape()
 {
-	for( auto& Elem : Chunks )
-	{
-		Elem.Value->Destroy();
-	}
-	Chunks.Empty();
-
-
+	RemoveLandscape();
+	
 	GenerateChunkOrder();
 	for( int32 i = 0; i < ChunkOrder.Num(); i++ )
 	{
+		StreamSet.Empty();
 		AddChunk(ChunkOrder[i]);
+		ChunkCount++;
 	}
 
 	return;
+}
+
+void ARMCLandscape::RemoveLandscape()
+{
+	if(Chunks.IsEmpty())
+	{
+		return;
+	}
+
+	for( auto& Elem : Chunks )
+	{
+		if(Elem.Value)
+		{
+			Elem.Value->Destroy();
+		}
+
+	}
+	Chunks.Empty();
+	ChunkCount = 0;
 }
 
 void ARMCLandscape::AddChunk(const FIntPoint& ChunkCoord)
@@ -69,11 +87,24 @@ void ARMCLandscape::AddChunk(const FIntPoint& ChunkCoord)
 	// Spawn chunk as Actor
 	ARealtimeMeshActor* RMA = GetWorld()->SpawnActor<ARealtimeMeshActor>();
 
+	if( RMA == nullptr )
+	{
+		UE_LOG(LogTemp, Warning, TEXT("RMA nullptr"));
+		return;
+	}
+
 	// Set Location
 	FVector Offset = FVector( ChunkCoord.X , ChunkCoord.Y, 0.0f ) * ChunkLength;
 	RMA->SetActorLocation(Offset);
 
 	URealtimeMeshSimple* RealtimeMesh = RMA->GetRealtimeMeshComponent()->InitializeRealtimeMesh<URealtimeMeshSimple>();
+
+	if( RealtimeMesh == nullptr )
+	{
+		UE_LOG(LogTemp, Warning, TEXT("RealtimeMesh nullptr"));
+		return;
+	}
+
 
 	RealtimeMesh->SetupMaterialSlot(0, "PrimaryMaterial");
 	RealtimeMesh->UpdateLODConfig(0, FRealtimeMeshLODConfig(1.00f));
@@ -90,15 +121,34 @@ void ARMCLandscape::AddChunk(const FIntPoint& ChunkCoord)
 
 	// update configuration.
 	RealtimeMesh->UpdateSectionConfig(PolyGroup0SectionKey, FRealtimeMeshSectionConfig(0), true);
+
 }
 
 void ARMCLandscape::GenerateStreamSet(const FIntPoint& ChunkCoord)
 {
 	// Chunk location offset
-	FVector Offset = FVector( ChunkCoord.X , ChunkCoord.Y, 0.0f ) * ChunkLength;
+	FVector3f Offset = FVector3f( ChunkCoord.X , ChunkCoord.Y, 0.0f ) * ChunkLength;
 	
 	// scale UV based on vetex spacing
 	float UVScale = VertexSpacing / TextureSize;
+
+	TArray<FVector3f> BigVertices, BigTangents, BigNormals;
+	TArray<uint32> BigTriagles;
+
+	for(int32 iY = -1 ; iY < VerticesPerChunk + 1; iY++)
+	{
+		for(int32 iX = -1; iX < VerticesPerChunk + 1; iX++)
+		{
+			FVector3f Vertex = FVector3f(iX, iY, 0.0f) * VertexSpacing + Offset;
+			if(ShouldGenerateHeight)
+			{
+				Vertex.Z = GenerateHeight( FVector2D(Vertex.X + Offset.X, Vertex.Y + Offset.Y) );
+			}
+			BigVertices.Add(Vertex);
+			
+		}
+	}
+
 
 
 	TArray<FVector3f> Vertices, Tangents, Normals;
@@ -119,8 +169,8 @@ void ARMCLandscape::GenerateStreamSet(const FIntPoint& ChunkCoord)
 			Vertices.Add(CurrentVertex);
 
 			FVector2DHalf UV;
-			UV.X = (Offset.X * (VerticesPerChunk-1) + iX) * UVScale;
-			UV.Y = (Offset.Y * (VerticesPerChunk-1) + iY) * UVScale;
+			UV.X = (ChunkCoord.X * (VerticesPerChunk - 1) + iX) * UVScale;
+			UV.Y = (ChunkCoord.Y * (VerticesPerChunk - 1) + iY) * UVScale;
 			UVs.Add(UV);
 		}
 	}
@@ -160,7 +210,7 @@ void ARMCLandscape::GenerateStreamSet(const FIntPoint& ChunkCoord)
 	);
 
 	// Datas into StreamSet( class Member Var )
-	RealtimeMesh::TRealtimeMeshBuilderLocal<uint32, FPackedNormal, FVector2DHalf, 2> Builder(StreamSet);
+	RealtimeMesh::TRealtimeMeshBuilderLocal<uint32, FPackedNormal, FVector2DHalf, 1> Builder(StreamSet);
 	Builder.EnableTangents();
 	Builder.EnableTexCoords();
 	Builder.EnableColors();
@@ -328,6 +378,11 @@ bool ARMCLandscape::IsChunkInRadius(const FIntPoint& Target, const FIntPoint& St
 float ARMCLandscape::GenerateHeight(const FVector2D& Location)
 {
 	float height = 0;
+
+	if(PerlinNoiseLayers.Num() <= 0)
+	{
+		return 0;
+	}
 
 	for ( int32 i = 0; i < PerlinNoiseLayers.Num(); i++)
 	{
