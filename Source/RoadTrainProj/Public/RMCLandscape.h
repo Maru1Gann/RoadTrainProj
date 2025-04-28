@@ -21,8 +21,6 @@ class ROADTRAINPROJ_API ARMCLandscape : public AActor
 public:	
 	// Sets default values for this actor's properties
 	ARMCLandscape();
-	virtual void OnConstruction(const FTransform& Transform) override;
-
 
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -75,11 +73,6 @@ private:
 	// Shared (multithreading)
 	RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
 	void GenerateStreamSet(const FIntPoint& ChunkCoord);
-	
-	// Sprial from center for generation priority
-	TArray<FIntPoint> ChunkOrder;
-	// Spiral Init.
-	void GenerateChunkOrder();
 
 	// Init in OnConstruction()
 	float ChunkLength;
@@ -98,5 +91,7 @@ private:
 	float GenerateHeight(const FVector2D& Location);
 
 	void RemoveChunk(const FIntPoint& ChunkCoord);
+
+	float GetElapsedInMs(const FDateTime& StartTime);
 
 };

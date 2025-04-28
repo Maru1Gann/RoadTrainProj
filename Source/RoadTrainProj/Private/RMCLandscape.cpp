@@ -13,22 +13,12 @@ ARMCLandscape::ARMCLandscape()
 
 }
 
-// Correspond to BP_ConstructionScript
-void ARMCLandscape::OnConstruction(const FTransform &Transform)
-{
-	Super::OnConstruction(Transform);
-
-	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
-	ChunkRadiusByLength = ChunkLength * ChunkRadius;
-	ChunkCount = 0;
-
-	return;
-}
-
 // Called when the game starts or when spawned
 void ARMCLandscape::BeginPlay()
 {
 	Super::BeginPlay();
+
+	GenerateLandscape();
 
 	return;
 }
@@ -44,21 +34,42 @@ void ARMCLandscape::Tick(float DeltaTime)
 
 void ARMCLandscape::GenerateLandscape()
 {
+	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
+	ChunkRadiusByLength = ChunkLength * ChunkRadius;
+	ChunkCount = 0;
+
+	FDateTime StartTime = FDateTime::UtcNow();
 	RemoveLandscape();
-	
-	GenerateChunkOrder();
-	for( int32 i = 0; i < ChunkOrder.Num(); i++ )
+	UE_LOG(LogTemp, Display, TEXT("RemoveLandscape : %f ms"), GetElapsedInMs(StartTime));
+
+
+	StartTime = FDateTime::UtcNow();
+
+	FIntPoint Center = FIntPoint(0,0);
+	if( GetWorld()->GetFirstPlayerController() != nullptr )
 	{
-		StreamSet.Empty();
-		AddChunk(ChunkOrder[i]);
-		ChunkCount++;
+		Center = GetPlayerLoactedChunk();
 	}
+
+	int32 Extent = ChunkRadius/2 + 1;
+	for( int32 iY = Center.Y - Extent; iY < Center.Y + Extent; iY++)
+	{
+		for (int32 iX = Center.X - Extent; iX < Center.X + Extent; iX++)
+		{
+			StreamSet.Empty();
+			AddChunk( FIntPoint(iX,iY) );
+			ChunkCount++;
+		}
+	}
+
+	UE_LOG(LogTemp, Display, TEXT("AddChunks : %f ms"), GetElapsedInMs(StartTime));
 
 	return;
 }
 
 void ARMCLandscape::RemoveLandscape()
 {
+	
 	if(Chunks.IsEmpty())
 	{
 		return;
@@ -74,6 +85,8 @@ void ARMCLandscape::RemoveLandscape()
 	}
 	Chunks.Empty();
 	ChunkCount = 0;
+
+	
 }
 
 void ARMCLandscape::AddChunk(const FIntPoint& ChunkCoord)
@@ -120,7 +133,7 @@ void ARMCLandscape::AddChunk(const FIntPoint& ChunkCoord)
 	Chunks.Add(ChunkCoord, RMA);
 
 	// update configuration.
-	RealtimeMesh->UpdateSectionConfig(PolyGroup0SectionKey, FRealtimeMeshSectionConfig(0), true);
+	RealtimeMesh->UpdateSectionConfig( PolyGroup0SectionKey, FRealtimeMeshSectionConfig(0), true );
 
 }
 
@@ -132,8 +145,9 @@ void ARMCLandscape::GenerateStreamSet(const FIntPoint& ChunkCoord)
 	// scale UV based on vetex spacing
 	float UVScale = VertexSpacing / TextureSize;
 
+/* 	// Big data for uv and normal continue on different chunks
 	TArray<FVector3f> BigVertices, BigTangents, BigNormals;
-	TArray<uint32> BigTriagles;
+	TArray<uint32> BigTriangles;
 
 	for(int32 iY = -1 ; iY < VerticesPerChunk + 1; iY++)
 	{
@@ -149,7 +163,54 @@ void ARMCLandscape::GenerateStreamSet(const FIntPoint& ChunkCoord)
 		}
 	}
 
+	for (int32 iY = -1; iY < VerticesPerChunk + 1; iY++)
+	{
+		for (int32 iX = -1; iX < VerticesPerChunk + 1; iX++)
+		{
+			int32 CurrentVertex = iX + iY * VerticesPerChunk;
+			BigTriangles.Add(CurrentVertex);
+			BigTriangles.Add(CurrentVertex + VerticesPerChunk);
+			BigTriangles.Add(CurrentVertex + 1);
 
+			BigTriangles.Add(CurrentVertex + VerticesPerChunk);
+			BigTriangles.Add(CurrentVertex + VerticesPerChunk + 1);
+			BigTriangles.Add(CurrentVertex + 1);
+		}
+	}
+
+	BigTangents.SetNum( BigVertices.Num() );
+	BigNormals.SetNum( BigVertices.Num() );
+
+	// Normals and Tangents from Big datas
+	RealtimeMeshAlgo::GenerateTangents(
+		TConstArrayView<uint32>(BigTriangles),
+		BigVertices,
+		nullptr, // UV Getter. We made uv.
+		[&BigNormals, &BigTangents](int index, FVector3f Tangent, FVector3f Normal) -> void
+		{
+			BigNormals[index] = Normal;
+			BigTangents[index] = Tangent;
+		},
+		true
+	);
+	
+	int32 index = 0;
+	for( int32 iY = 0; iY < VerticesPerChunk + 2; iY++)
+	{
+		for ( int32 iX = 0; iX < VerticesPerChunk + 2; iX++)
+		{
+			if ( iY > 0 && iY < VerticesPerChunk + 1 
+				&&
+				iX > 0 && iX < VerticesPerChunk + 1 )
+			{
+				Tangents.Add(BigTangents[index]);
+				Normals.Add(BigNormals[index]);
+			}
+			index++;
+		}
+	}
+
+ */
 
 	TArray<FVector3f> Vertices, Tangents, Normals;
 	TArray<uint32> Triangles;
@@ -193,10 +254,10 @@ void ARMCLandscape::GenerateStreamSet(const FIntPoint& ChunkCoord)
 		}
 	}
 
-	Tangents.SetNum( Vertices.Num() );
-	Normals.SetNum( Vertices.Num() );
+	Tangents.SetNum(Vertices.Num());
+	Normals.SetNum(Vertices.Num());
 
-	// Normals and Tangents
+	// Normals and Tangents from Big datas
 	RealtimeMeshAlgo::GenerateTangents(
 		TConstArrayView<uint32>(Triangles),
 		Vertices,
@@ -208,6 +269,9 @@ void ARMCLandscape::GenerateStreamSet(const FIntPoint& ChunkCoord)
 		},
 		true
 	);
+
+
+
 
 	// Datas into StreamSet( class Member Var )
 	RealtimeMesh::TRealtimeMeshBuilderLocal<uint32, FPackedNormal, FVector2DHalf, 1> Builder(StreamSet);
@@ -249,99 +313,6 @@ void ARMCLandscape::GenerateStreamSet(const FIntPoint& ChunkCoord)
 
 
 /* Tools */
-void ARMCLandscape::GenerateChunkOrder()
-{
-	ChunkOrder.Empty();
-
-	// we make square with chunks
-	// from the start point, we make it like a whirl
-
-	/* example
-		16	15	14	13	12
-		17	4	3	2	11
-		18	5	0	1	10
-		19	6	7	8	9
-		20	21	22	23	24
-
-		this goes
-		*Iterator starts from 2
-
-		one step front
-		'Iterator - 1' step upwards
-		'Iterator' step backwards
-		'Iterator' step downwards
-		'Iterator' step forwards
-		-> one square done.
-		iterator++
-		
-		add it only when it's inside radius.
-	*/
-
-	int32 Iterator = 1;
-	FIntPoint CurrentCoord = FIntPoint(0,0);
-	ChunkOrder.Add(CurrentCoord);
-
-	while ( Iterator <= ChunkRadiusByLength )
-	{
-		int32 step = Iterator*2;
-		// one step front.
-		CurrentCoord += FIntPoint(1,0);
-		if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord) )
-			{
-				ChunkOrder.Add(CurrentCoord);
-			}
-
-		// step up
-		for (int32 i = 0; i < step - 1; i++)
-		{
-			
-			CurrentCoord += FIntPoint(0,1);
-			if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord) )
-			{
-				ChunkOrder.Add(CurrentCoord);
-			}
-		}
-
-		// step back
-		for (int32 i = 0; i < step; i++)
-		{
-			
-			CurrentCoord += FIntPoint(-1, 0);
-			if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord) )
-			{
-				ChunkOrder.Add(CurrentCoord);
-			}
-		}
-
-		// step down
-		for (int32 i = 0; i < step; i++)
-		{
-
-			CurrentCoord += FIntPoint(0, -1);
-			if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord) )
-			{
-				ChunkOrder.Add(CurrentCoord);
-			}
-		}
-
-		// step forward
-		for (int32 i = 0; i < step; i++)
-		{
-			
-			CurrentCoord += FIntPoint(1, 0);
-			if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord) )
-			{
-				ChunkOrder.Add(CurrentCoord);
-			}
-		}
-
-
-		Iterator++;
-	}
-
-
-	return;
-}
 
 FVector2D ARMCLandscape::GetChunkCenter(const FIntPoint& ChunkCoord)
 {
@@ -355,7 +326,6 @@ FVector2D ARMCLandscape::GetChunkCenter(const FIntPoint& ChunkCoord)
 FIntPoint ARMCLandscape::GetPlayerLoactedChunk()
 {
 	FIntPoint ChunkCoord;
-
 	FVector PlayerLocation = GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorLocation();
 	ChunkCoord.X = FMath::FloorToInt32( PlayerLocation.X / ChunkLength );
 	ChunkCoord.Y = FMath::FloorToInt32( PlayerLocation.Y / ChunkLength );
@@ -404,4 +374,9 @@ void ARMCLandscape::RemoveChunk(const FIntPoint &ChunkCoord)
 		Chunks.Remove(ChunkCoord);
 	}
 	return;
+}
+
+float ARMCLandscape::GetElapsedInMs(const FDateTime &StartTime)
+{
+	return (FDateTime::UtcNow() - StartTime).GetTotalMilliseconds();
 }
