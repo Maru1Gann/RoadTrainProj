@@ -13,11 +13,12 @@
 // must be last
 #include "RMCLandscape.generated.h"
 
+
 UCLASS()
 class ROADTRAINPROJ_API ARMCLandscape : public AActor
 {
 	GENERATED_BODY()
-	
+
 public:	
 	// Sets default values for this actor's properties
 	ARMCLandscape();
@@ -49,10 +50,15 @@ public:
 	UPROPERTY( EditAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 2) )
 	TArray<FPerlinNoiseVariables> PerlinNoiseLayers;
 
-	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 1, ClampMin = "0.0", Step = "0.001") )
+	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 1) )
+	bool bUseAsync = true;
+	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 2, ClampMin = "0.0", Step = "0.001") )
 	float UpdatePeriod = 0.1f;
 
 
+	void AsyncGenerateLandscape();
+	void AsyncAddChunksInRange();
+	void AsyncRemoveChunksOutOfRange();
 
 	UFUNCTION( CallInEditor, Category = "Chunks" )
 	void GenerateLandscape();
@@ -67,17 +73,17 @@ protected:
 
 
 private:
+	// Mutex for Chunks
+	mutable FCriticalSection ChunksMutex;
 	// Store all the chunks HERE
 	TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
+	TQueue<FIntPoint> ChunkQueue;
 
-	void AddChunk(const FIntPoint& ChunkCoord);
+	void AddChunk(const FIntPoint& ChunkCoord, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
 
+	void GenerateStreamSet(const FIntPoint& ChunkCoord, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
 
-	// Shared (multithreading)
-	RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-	void GenerateStreamSet(const FIntPoint& ChunkCoord);
-
-	// Init in OnConstruction()
+	// Init before LandscapeGeneration.
 	float ChunkLength;
 	float ChunkRadiusByLength;
 
@@ -85,7 +91,7 @@ private:
 	FVector2D GetChunkCenter(const FIntPoint& ChunkCoord);
 
 	// Get ChunkCoord of Player
-	FIntPoint GetPlayerLoactedChunk();
+	FIntPoint GetPlayerLocatedChunk();
 
 	// Get if selected two chunks are in distance.
 	bool IsChunkInRadius(const FIntPoint& Target, const FIntPoint& Start);

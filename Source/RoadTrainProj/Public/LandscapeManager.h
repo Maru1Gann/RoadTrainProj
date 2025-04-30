@@ -176,4 +176,5 @@ public:
 
 private:
 	ALandscapeManager* LandscapeManager;
+	
 };
