@@ -21,6 +21,7 @@ class ROADTRAINPROJ_API ARMCLandscape : public AActor
 public:	
 	// Sets default values for this actor's properties
 	ARMCLandscape();
+	~ARMCLandscape();
 
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -48,6 +49,8 @@ public:
 	UPROPERTY( EditAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 2) )
 	TArray<FPerlinNoiseVariables> PerlinNoiseLayers;
 
+	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 1, ClampMin = "0.0", Step = "0.001") )
+	float UpdatePeriod = 0.1f;
 
 
 
