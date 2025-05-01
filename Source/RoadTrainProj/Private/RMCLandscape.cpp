@@ -4,9 +4,6 @@
 #include "RMCLandscape.h"
 #include "Mesh/RealtimeMeshAlgo.h"
 
-#include "Async/Async.h"
-#include "Misc/ScopeLock.h"
-
 // Sets default values
 ARMCLandscape::ARMCLandscape()
 {
@@ -19,7 +16,6 @@ ARMCLandscape::ARMCLandscape()
 ARMCLandscape::~ARMCLandscape()
 {
 	RemoveLandscape();
-
 }
 
 // Called when the game starts or when spawned
@@ -27,8 +23,11 @@ void ARMCLandscape::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// TODO : Move all these to Control class later
+	GenerateChunkOrder();
 
+	StreamSetGenerator = new FAsyncTask<FStreamSetGenerator>(this);
+
+	// TODO : Move all these to Control class later
 	FTimerHandle LandscapeTimer;
 	if( bUseAsync )
 	{
@@ -53,8 +52,14 @@ void ARMCLandscape::BeginPlay()
 		);
 	}
 
-
 	return;
+}
+
+void ARMCLandscape::OnConstruction(const FTransform &Transform)
+{
+	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
+	HorizonDistance = (ChunkLength/2 + ChunkLength * ChunkRadius) / (100*1000); // km
+	GenerateChunkOrder();
 }
 
 // Called every frame
@@ -69,133 +74,85 @@ void ARMCLandscape::Tick(float DeltaTime)
 
 void ARMCLandscape::AsyncGenerateLandscape()
 {
-	AsyncAddChunksInRange();
-	
-	FTimerHandle RemoveTimer;
-	GetWorldTimerManager().SetTimer(
-		RemoveTimer,
-		this,
-		&ARMCLandscape::AsyncRemoveChunksOutOfRange,
-		UpdatePeriod/2,
-		false,
-		0.0f
-	);
 
-	return;
-}
+	if( IsDataReady == true )
+	{
+		IsWorking = true;
 
-void ARMCLandscape::AsyncAddChunksInRange()
-{
-
-	AsyncTask(ENamedThreads::AnyBackgroundHiPriTask, 
-		[this]()
+		if( NeededChunk.Value == true )
 		{
-		// Lambda Start
-			FIntPoint Center = FIntPoint(0,0);
-			if( GetWorld()->GetFirstPlayerController() != nullptr )
-			{
-				Center = GetPlayerLocatedChunk();
-			}
-			
-			// Adding Chunks
-			int32 Extent = ChunkRadius;
-			for( int32 iY = Center.Y - Extent; iY <= Center.Y + Extent; iY++)
-			{
-				for (int32 iX = Center.X - Extent; iX <= Center.X + Extent; iX++)
-				{
-					FIntPoint Coord = FIntPoint(iX, iY);
-					if( !Chunks.Contains(Coord) )
-					{
-						RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-						GenerateStreamSet( Coord, StreamSet );
-						// Do this ↓ on Main Thread. use MUTEX!!!
-						AsyncTask(ENamedThreads::GameThread, [ this, &StreamSet, &Coord ]{ FScopeLock Lock(&ChunksMutex); AddChunk(Coord, StreamSet); } );
-						ChunkCount++;
-					}
-				}
-			}
-		// Lambda End
-		} 
-	);
+			AddChunk(NeededChunk.Key, MemberStreamSet);
+			NeededChunk.Value = false;
+		}
+
+		if( RemovableChunk.Value == true )
+		{
+			RemoveChunk(RemovableChunk.Key);
+			RemovableChunk.Value = false;
+		}
+
+		IsDataReady = false;
+		IsWorking = false;
+
+	}
+
+	if( StreamSetGenerator->IsDone() && IsWorking == false )
+	{
+		StreamSetGenerator->EnsureCompletion();
+		StreamSetGenerator->StartBackgroundTask();
+	}
 
 	return;
-}
-
-void ARMCLandscape::AsyncRemoveChunksOutOfRange()
-{
-	AsyncTask(ENamedThreads::AnyThread, 
-		[this](){
-		// Lambda Start
-			FIntPoint Center = FIntPoint(0,0);
-			if( GetWorld()->GetFirstPlayerController() )
-			{
-				Center = GetPlayerLocatedChunk();
-			}
-			int32 Extent = ChunkRadius;
-			TArray<FIntPoint> ChunksToRemove;
-
-			FScopeLock Lock(&ChunksMutex);	// MUTEX!!
-			for ( auto &Elem : Chunks )
-			{
-				if( Elem.Key.X < Center.X - Extent || Elem.Key.X > Center.X + Extent
-					||
-					Elem.Key.Y < Center.Y - Extent || Elem.Key.Y > Center.Y + Extent)
-				{
-					ChunksToRemove.Add(Elem.Key);
-					ARealtimeMeshActor* RMA = Elem.Value;
-					AsyncTask( ENamedThreads::GameThread, [this, RMA]{ RMA->Destroy(); } );
-				}
-			}
-
-			for ( int32 i = 0; i < ChunksToRemove.Num(); i++ )
-			{
-				Chunks.Remove(ChunksToRemove[i]);
-			}
-		// Lambda End
-		} 
-	);
-
 }
 
 void ARMCLandscape::GenerateLandscape()
 {
 	// Init some var
-	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
-	ChunkRadiusByLength = ChunkLength * ChunkRadius;
-	ChunkCount = 0;
-
 
 	FDateTime StartTime = FDateTime::UtcNow();
+	int32 PrevChunkCount = ChunkCount;
 	// Adding Chunks
 
-	FIntPoint Center = FIntPoint(0,0);
-	if( GetWorld()->GetFirstPlayerController() != nullptr )
-	{
-		Center = GetPlayerLocatedChunk();
-	}
+	FIntPoint Center = GetPlayerLocatedChunk();
+
+	float StreamSetTime = 0.f;
+	float AddChunkTime = 0.f;
 
 	RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-	int32 Extent = ChunkRadius;
-	for( int32 iY = Center.Y - Extent; iY <= Center.Y + Extent; iY++)
+	// sprial generation
+	for( int32 i = 0; i < ChunkOrder.Num(); i++ )
 	{
-		for (int32 iX = Center.X - Extent; iX <= Center.X + Extent; iX++)
+		FIntPoint Coord = ChunkOrder[i] + Center;
+		if( !Chunks.Contains(Coord) )
 		{
-			FIntPoint Coord = FIntPoint(iX, iY);
-			if( !Chunks.Contains(Coord) )
-			{
-				StreamSet.Empty();
-				GenerateStreamSet( Coord, StreamSet );
-				AddChunk( Coord, StreamSet );
-				ChunkCount++;
-			}
+				FDateTime Tmp = FDateTime::UtcNow();
+
+			StreamSet.Empty();
+			GenerateStreamSet( Coord, StreamSet );
+
+				StreamSetTime += (FDateTime::UtcNow() - Tmp).GetTotalMilliseconds();
+				Tmp = FDateTime::UtcNow();
+
+			AddChunk( Coord, StreamSet );
+
+				AddChunkTime += (FDateTime::UtcNow() - Tmp).GetTotalMilliseconds();
+
+			ChunkCount++;
 		}
 	}
 
-	UE_LOG(LogTemp, Display, TEXT("AddChunks : %f ms"), GetElapsedInMs(StartTime));
+	if( PrevChunkCount != ChunkCount )
+	{
+		UE_LOG(LogTemp, Display, TEXT("AddChunksTotal	: %f ms"), GetElapsedInMs(StartTime));
+		UE_LOG(LogTemp, Display, TEXT("StreamSetGen	: %f ms"), StreamSetTime);
+		UE_LOG(LogTemp, Display, TEXT("AddingChunks	: %f ms"), AddChunkTime);
+		PrevChunkCount = ChunkCount;
+	}
 
 	StartTime = FDateTime::UtcNow();
 	// Removing Chunks
 	TArray<FIntPoint> ChunksToRemove;
+	int32 Extent = ChunkRadius;
 	for( auto &Elem : Chunks )
 	{
 
@@ -205,6 +162,7 @@ void ARMCLandscape::GenerateLandscape()
 		{
 			ChunksToRemove.Add(Elem.Key);
 			Elem.Value->Destroy();
+			ChunkCount--;
 		}
 	}
 
@@ -214,8 +172,10 @@ void ARMCLandscape::GenerateLandscape()
 		Chunks.Remove(Elem);
 	}
 
-	UE_LOG(LogTemp, Display, TEXT("RemoveChunks : %f ms"), GetElapsedInMs(StartTime));
-
+	if(PrevChunkCount != ChunkCount)
+	{
+		UE_LOG(LogTemp, Display, TEXT("RemoveChunks : %f ms"), GetElapsedInMs(StartTime));
+	}
 
 
 	return;
@@ -484,40 +444,84 @@ void ARMCLandscape::GenerateStreamSet(const FIntPoint& ChunkCoord, RealtimeMesh:
 	return;
 }
 
+void ARMCLandscape::GenerateChunkOrder()
+{
+	FDateTime StartTime = FDateTime::UtcNow();
+	// This function never needs to be called more than once!
+	// Unless the variables have changed. (when called in editor)
+
+	ChunkOrder.Empty();
+	ChunkOrder.SetNum( (ChunkRadius*2+1) * (ChunkRadius*2+1) );
+
+	// we make square with chunks
+	// from the start point, we make it like a whirl
+
+	/* example
+		20	19	18	17	16
+		21	6	5	4	15
+		22	7	0	3	14
+		23	8	1	2	13
+		24	9	10	11	12
+		25	..
+
+		x+ : right
+		y+ : down
+	*/
+
+	FIntPoint Pos = FIntPoint(0,0);
+	int32 Index = 0;
+	ChunkOrder[Index++] = Pos;
+	int32 LocalStep = 2;
+	while( Index < ChunkOrder.Num() )
+	{
+		// one step down
+		Pos.Y++;
+		ChunkOrder[Index++] = Pos;
+
+		for( int32 i = 1; i<LocalStep; i++ )
+		{
+			Pos.X++;
+			ChunkOrder[Index++] = Pos;
+		}
+		for( int32 i = 0; i<LocalStep; i++)
+		{
+			Pos.Y--;
+			ChunkOrder[Index++] = Pos;
+		}
+		for (int32 i = 0; i<LocalStep; i++)
+		{
+			Pos.X--;
+			ChunkOrder[Index++] = Pos;
+		}
+		for (int32 i = 0; i<LocalStep; i++)
+		{
+			Pos.Y++;
+			ChunkOrder[Index++] = Pos;
+		}
+
+		LocalStep += 2;
+	}
+
+	UE_LOG(LogTemp, Display, TEXT("ChunkOrderGeneration : %f ms"), 	GetElapsedInMs(StartTime) );
+	return;
+}
 
 
 
 /* Tools */
 
-FVector2D ARMCLandscape::GetChunkCenter(const FIntPoint& ChunkCoord)
-{
-
-	FVector2D Offset = FVector2D( ChunkCoord.X * ChunkLength , ChunkCoord.Y * ChunkLength );
-	FVector2D Center = FVector2D( ChunkLength / 2 , ChunkLength / 2 );
-
-	return Offset + Center;
-}
-
 FIntPoint ARMCLandscape::GetPlayerLocatedChunk()
 {
-	FIntPoint ChunkCoord;
-	FVector PlayerLocation = GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorLocation();
-	ChunkCoord.X = FMath::FloorToInt32( PlayerLocation.X / ChunkLength );
-	ChunkCoord.Y = FMath::FloorToInt32( PlayerLocation.Y / ChunkLength );
+	FIntPoint ChunkCoord = FIntPoint(0,0);
 
+	if( GetWorld()->GetFirstPlayerController() )
+	{
+		FVector PlayerLocation = GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorLocation();
+		ChunkCoord.X = FMath::FloorToInt32( PlayerLocation.X / ChunkLength );
+		ChunkCoord.Y = FMath::FloorToInt32( PlayerLocation.Y / ChunkLength );
+	}
+	
 	return ChunkCoord;
-}
-
-bool ARMCLandscape::IsChunkInRadius(const FIntPoint& Target, const FIntPoint& Start)
-{
-	FVector2D TargetPoint = GetChunkCenter(Target);
-	FVector2D StartPoint = GetChunkCenter(Start);
-
-	float LengthSquared = FMath::Pow(ChunkRadiusByLength, 2);
-	float DistanceSquared = FVector2D::DistSquared(TargetPoint, StartPoint);
-	
-	
-	return LengthSquared >= DistanceSquared;
 }
 
 float ARMCLandscape::GenerateHeight(const FVector2D& Location)
@@ -543,9 +547,10 @@ float ARMCLandscape::GenerateHeight(const FVector2D& Location)
 
 void ARMCLandscape::RemoveChunk(const FIntPoint &ChunkCoord)
 {
-	if(Chunks.Contains(ChunkCoord))
+
+	if(	ARealtimeMeshActor** pRMA = Chunks.Find(ChunkCoord) )
 	{
-		Chunks[ChunkCoord]->Destroy();
+		(*pRMA)->Destroy();
 		Chunks.Remove(ChunkCoord);
 	}
 	return;
@@ -554,4 +559,49 @@ void ARMCLandscape::RemoveChunk(const FIntPoint &ChunkCoord)
 float ARMCLandscape::GetElapsedInMs(const FDateTime &StartTime)
 {
 	return (FDateTime::UtcNow() - StartTime).GetTotalMilliseconds();
+}
+
+
+void FStreamSetGenerator::DoWork()
+{
+
+	FIntPoint CurrentChunk = RMC->GetPlayerLocatedChunk();
+	if ( CurrentChunk != RMC->PlayerChunk )
+	{
+		StartIndex = 0;
+		RMC->PlayerChunk = CurrentChunk;
+	}
+
+
+	for( int32 i = StartIndex; i < RMC->ChunkOrder.Num(); i++ )
+	{
+		FIntPoint Coord = RMC->ChunkOrder[i] + CurrentChunk;
+		if( !RMC->Chunks.Contains( Coord ) )
+		{
+			RMC->MemberStreamSet.Empty();
+			RMC->GenerateStreamSet( Coord, RMC->MemberStreamSet );
+			RMC->NeededChunk.Key = Coord;
+			RMC->NeededChunk.Value = true;
+			StartIndex = i+1;
+			break;
+		}
+	}
+
+	int32 Extent = RMC->ChunkRadius;
+	FIntPoint Center = CurrentChunk;
+	for ( auto &Elem : RMC->Chunks )
+	{
+		if( Elem.Key.X < Center.X - Extent || Elem.Key.X > Center.X + Extent
+			||
+			Elem.Key.Y < Center.Y - Extent || Elem.Key.Y > Center.Y + Extent)
+		{
+			RMC->RemovableChunk.Key = Elem.Key;
+			RMC->RemovableChunk.Value = true;
+			break;
+		}
+	}
+
+	RMC->IsDataReady = true;
+
+	return;
 }

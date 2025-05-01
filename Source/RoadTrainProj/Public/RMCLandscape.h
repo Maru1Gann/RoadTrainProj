@@ -19,11 +19,14 @@ class ROADTRAINPROJ_API ARMCLandscape : public AActor
 {
 	GENERATED_BODY()
 
+	friend class FStreamSetGenerator;
+
 public:	
 	// Sets default values for this actor's properties
 	ARMCLandscape();
 	~ARMCLandscape();
-
+	
+	virtual void OnConstruction(const FTransform &Transform) override;
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
@@ -40,9 +43,7 @@ public:
 	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 4, ClampMin = "0.0", Step = "10.0") )
 	float TextureSize = 300.0f;
 
-	// for debugging purposes
-	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 5) )
-	int32 ChunkCount = 0;
+
 
 	UPROPERTY( EditAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 1) )
 	bool ShouldGenerateHeight = true;
@@ -51,14 +52,12 @@ public:
 	TArray<FPerlinNoiseVariables> PerlinNoiseLayers;
 
 	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 1) )
-	bool bUseAsync = true;
+	bool bUseAsync = false;
 	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 2, ClampMin = "0.0", Step = "0.001") )
 	float UpdatePeriod = 0.1f;
 
 
 	void AsyncGenerateLandscape();
-	void AsyncAddChunksInRange();
-	void AsyncRemoveChunksOutOfRange();
 
 	UFUNCTION( CallInEditor, Category = "Chunks" )
 	void GenerateLandscape();
@@ -73,28 +72,36 @@ protected:
 
 
 private:
-	// Mutex for Chunks
-	mutable FCriticalSection ChunksMutex;
 	// Store all the chunks HERE
 	TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
-	TQueue<FIntPoint> ChunkQueue;
+	//TQueue<FIntPoint> ChunkQueue;
+	TArray<FIntPoint> ChunkOrder;
 
 	void AddChunk(const FIntPoint& ChunkCoord, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
 
 	void GenerateStreamSet(const FIntPoint& ChunkCoord, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
 
-	// Init before LandscapeGeneration.
-	float ChunkLength;
-	float ChunkRadiusByLength;
+	void GenerateChunkOrder();
 
-	// Get Center point of given ChunkCoord
-	FVector2D GetChunkCenter(const FIntPoint& ChunkCoord);
+	bool IsDataReady = false;
+	bool IsWorking = false;
+	FIntPoint PlayerChunk = FIntPoint(0,0);
+	// set true if updated
+	TPair<FIntPoint, bool> RemovableChunk;
+	TPair<FIntPoint, bool> NeededChunk;
+	RealtimeMesh::FRealtimeMeshStreamSet MemberStreamSet;
+
+	// for debugging purposes
+	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 5) )
+	int32 ChunkCount = 0;
+	// Init in OnConstruction.
+	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 6) )
+	float ChunkLength;
+	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 7) )
+	float HorizonDistance;
 
 	// Get ChunkCoord of Player
 	FIntPoint GetPlayerLocatedChunk();
-
-	// Get if selected two chunks are in distance.
-	bool IsChunkInRadius(const FIntPoint& Target, const FIntPoint& Start);
 
 	// Generate Height with PerlinNoise
 	float GenerateHeight(const FVector2D& Location);
@@ -103,4 +110,28 @@ private:
 
 	float GetElapsedInMs(const FDateTime& StartTime);
 
+	FAsyncTask<FStreamSetGenerator>* StreamSetGenerator;
+
+};
+
+class FStreamSetGenerator : public FNonAbandonableTask
+{
+	friend class FAutoDeleteAsyncTask< FStreamSetGenerator >;
+
+public:
+	FStreamSetGenerator(ARMCLandscape* RMC) : RMC(RMC) { StartIndex = 0; };
+
+	void DoWork();
+
+	// Probably declares the Task to the TaskGraph
+	FORCEINLINE TStatId GetStatId() const 
+	{ 
+		RETURN_QUICK_DECLARE_CYCLE_STAT(FLandscapeInfoTask, STATGROUP_ThreadPoolAsyncTasks);
+	}
+
+
+private:
+	ARMCLandscape* RMC;
+	int32 StartIndex = 0;
+	
 };
