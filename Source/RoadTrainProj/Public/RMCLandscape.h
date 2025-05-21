@@ -10,6 +10,9 @@
 
 #include "PerlinNoiseVariables.h"
 
+#include "PCGComponent.h"
+#include "PCGGraph.h"
+
 // must be last
 #include "RMCLandscape.generated.h"
 
@@ -31,6 +34,8 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 
+	// -------------------Chunk Generation (RMC) ----------------------
+
 	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 1, ClampMin = "10.0", Step = "10.0", Units = "cm") )
 	float VertexSpacing = 300.0f;
 
@@ -43,8 +48,6 @@ public:
 	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 4, ClampMin = "0.0", Step = "10.0") )
 	float TextureSize = 300.0f;
 
-
-
 	UPROPERTY( EditAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 1) )
 	bool ShouldGenerateHeight = true;
 
@@ -52,7 +55,7 @@ public:
 	TArray<FPerlinNoiseVariables> PerlinNoiseLayers;
 
 	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 1) )
-	bool bUseAsync = false;
+	bool bUseAsync = true;
 	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 2, ClampMin = "0.0", Step = "0.001") )
 	float UpdatePeriod = 0.1f;
 
@@ -64,6 +67,15 @@ public:
 	UFUNCTION( CallInEditor, Category = "Chunks" )
 	void RemoveLandscape();
 
+	// -------------------Chunk Generation (RMC) ----------------------
+
+	// -------------------PCG-----------------------------------------
+
+	UPROPERTY(VisibleAnywhere, Category = "PCG")
+	UPCGComponent* PCGComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "PCG")
+	UPCGGraph* PCGGraph;
 
 protected:
 	// Called when the game starts or when spawned
@@ -74,7 +86,7 @@ protected:
 private:
 	// Store all the chunks HERE
 	TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
-	//TQueue<FIntPoint> ChunkQueue;
+	// Chunk Generation Order
 	TArray<FIntPoint> ChunkOrder;
 
 	void AddChunk(const FIntPoint& ChunkCoord, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);

@@ -11,6 +11,9 @@ ARMCLandscape::ARMCLandscape()
 	PrimaryActorTick.bCanEverTick = false;
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 
+	PCGComponent = CreateDefaultSubobject<UPCGComponent>(TEXT("PCGComponent"));
+	
+
 }
 
 ARMCLandscape::~ARMCLandscape()
@@ -23,6 +26,20 @@ void ARMCLandscape::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// PCG Init
+	
+	if( PCGComponent && PCGGraph )
+	{
+		PCGComponent->SetGraph(PCGGraph);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PCG Graph null"));
+	}
+
+
+
+	// RMC Chunk Generation ↓
 	GenerateChunkOrder();
 
 	StreamSetGenerator = new FAsyncTask<FStreamSetGenerator>(this);
