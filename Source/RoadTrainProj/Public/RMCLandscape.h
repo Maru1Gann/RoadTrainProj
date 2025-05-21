@@ -124,6 +124,7 @@ private:
 
 	FAsyncTask<FStreamSetGenerator>* StreamSetGenerator;
 
+	
 };
 
 class FStreamSetGenerator : public FNonAbandonableTask

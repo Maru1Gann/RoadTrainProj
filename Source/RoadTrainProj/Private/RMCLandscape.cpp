@@ -579,9 +579,10 @@ float ARMCLandscape::GetElapsedInMs(const FDateTime &StartTime)
 }
 
 
+// StartBackgroundTask() calls this function
 void FStreamSetGenerator::DoWork()
 {
-
+	
 	FIntPoint CurrentChunk = RMC->GetPlayerLocatedChunk();
 	if ( CurrentChunk != RMC->PlayerChunk )
 	{
@@ -600,6 +601,9 @@ void FStreamSetGenerator::DoWork()
 			RMC->NeededChunk.Key = Coord;
 			RMC->NeededChunk.Value = true;
 			StartIndex = i+1;
+
+			// PCG add points
+
 			break;
 		}
 	}
