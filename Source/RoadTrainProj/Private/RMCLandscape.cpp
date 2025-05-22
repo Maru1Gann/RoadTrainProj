@@ -11,9 +11,6 @@ ARMCLandscape::ARMCLandscape()
 	PrimaryActorTick.bCanEverTick = false;
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 
-	PCGComponent = CreateDefaultSubobject<UPCGComponent>(TEXT("PCGComponent"));
-	
-
 }
 
 ARMCLandscape::~ARMCLandscape()
@@ -25,19 +22,6 @@ ARMCLandscape::~ARMCLandscape()
 void ARMCLandscape::BeginPlay()
 {
 	Super::BeginPlay();
-
-	// PCG Init
-	
-	if( PCGComponent && PCGGraph )
-	{
-		PCGComponent->SetGraph(PCGGraph);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("PCG Graph null"));
-	}
-
-
 
 	// RMC Chunk Generation ↓
 	GenerateChunkOrder();
@@ -223,7 +207,6 @@ void ARMCLandscape::RemoveLandscape()
 
 // Private ↓
 
-
 void ARMCLandscape::AddChunk(const FIntPoint& ChunkCoord, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet)
 {
 	if( GetWorld() == nullptr )
@@ -262,6 +245,15 @@ void ARMCLandscape::AddChunk(const FIntPoint& ChunkCoord, const RealtimeMesh::FR
 
 	// this generates the mesh (chunk)
 	RealtimeMesh->CreateSectionGroup(GroupKey, StreamSet);
+
+	// set it to static
+	RMA->GetRootComponent()->SetMobility(EComponentMobility::Static);
+
+	if( ChunkMaterial != nullptr )
+	{
+		URealtimeMeshComponent* MeshComp = RMA->GetRealtimeMeshComponent();
+		MeshComp->SetMaterial( 0, ChunkMaterial );
+	}
 
 	Chunks.Add(ChunkCoord, RMA);
 

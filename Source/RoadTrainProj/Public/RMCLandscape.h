@@ -59,6 +59,9 @@ public:
 	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 2, ClampMin = "0.0", Step = "0.001") )
 	float UpdatePeriod = 0.1f;
 
+	UPROPERTY( EditAnywhere, Category = "Chunks|Material")
+	UMaterialInterface* ChunkMaterial;
+
 
 	void AsyncGenerateLandscape();
 
@@ -68,14 +71,6 @@ public:
 	void RemoveLandscape();
 
 	// -------------------Chunk Generation (RMC) ----------------------
-
-	// -------------------PCG-----------------------------------------
-
-	UPROPERTY(VisibleAnywhere, Category = "PCG")
-	UPCGComponent* PCGComponent;
-
-	UPROPERTY(VisibleAnywhere, Category = "PCG")
-	UPCGGraph* PCGGraph;
 
 protected:
 	// Called when the game starts or when spawned
