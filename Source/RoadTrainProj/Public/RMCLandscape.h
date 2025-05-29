@@ -37,13 +37,13 @@ public:
 	// -------------------Chunk Generation (RMC) ----------------------
 
 	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 1, ClampMin = "10.0", Step = "10.0", Units = "cm") )
-	float VertexSpacing = 300.0f;
+	float VertexSpacing = 1000.0f;
 
 	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 2, ClampMin = "2", Step = "2") )
-	int32 VerticesPerChunk = 10;
+	int32 VerticesPerChunk = 128;
 
 	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 3, ClampMin = "0", Step = "1") )
-	int32 ChunkRadius = 5;
+	int32 ChunkRadius = 1;
 
 	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 4, ClampMin = "0.0", Step = "10.0") )
 	float TextureSize = 300.0f;
