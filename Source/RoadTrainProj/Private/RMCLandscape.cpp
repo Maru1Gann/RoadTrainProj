@@ -12,6 +12,7 @@ ARMCLandscape::ARMCLandscape()
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	PerlinNoiseLayers.Add( FPerlinNoiseVariables(10000.0f, 1000.0f, 1.0f) );
 
+	StreamSetGenerator = new FAsyncTask<FStreamSetGenerator>(this);
 }
 
 // Called when the game starts or when spawned
@@ -21,8 +22,6 @@ void ARMCLandscape::BeginPlay()
 
 	// RMC Chunk Generation ↓
 	GenerateChunkOrder();
-
-	StreamSetGenerator = new FAsyncTask<FStreamSetGenerator>(this);
 
 	// TODO : Move all these to Control class later
 	FTimerHandle LandscapeTimer;
@@ -71,6 +70,11 @@ void ARMCLandscape::Tick(float DeltaTime)
 
 void ARMCLandscape::AsyncGenerateLandscape()
 {
+	if( StreamSetgenerator == nullptr )
+	{
+		UE_LOG(LogTemp, Warning, TEXT("StreamSetGenerator nullptr"));
+		return;
+	}
 
 	if( IsDataReady == true )
 	{
@@ -213,7 +217,6 @@ void ARMCLandscape::AddChunk(const FIntPoint& ChunkCoord, const RealtimeMesh::FR
 
 	// Spawn chunk as Actor
 	ARealtimeMeshActor* RMA = GetWorld()->SpawnActor<ARealtimeMeshActor>();
-
 	if( RMA == nullptr )
 	{
 		UE_LOG(LogTemp, Warning, TEXT("RMA nullptr"));
@@ -224,8 +227,14 @@ void ARMCLandscape::AddChunk(const FIntPoint& ChunkCoord, const RealtimeMesh::FR
 	FVector Offset = FVector( ChunkCoord.X , ChunkCoord.Y, 0.0f ) * ChunkLength;
 	RMA->SetActorLocation(Offset);
 
-	URealtimeMeshSimple* RealtimeMesh = RMA->GetRealtimeMeshComponent()->InitializeRealtimeMesh<URealtimeMeshSimple>();
+	URealtimeMeshComponent* pRMC = RMA->GetRealtimeMeshComponent();
+	if( pRMC == nullptr )
+	{
+		UE_LOG(LogTemp, Warning, TEXT("pRMC nullptr"));
+		return;
+	}
 
+	URealtimeMeshSimple* RealtimeMesh = RMA->GetRealtimeMeshComponent()->InitializeRealtimeMesh<URealtimeMeshSimple>();
 	if( RealtimeMesh == nullptr )
 	{
 		UE_LOG(LogTemp, Warning, TEXT("RealtimeMesh nullptr"));
@@ -570,6 +579,10 @@ float ARMCLandscape::GetElapsedInMs(const FDateTime &StartTime)
 // StartBackgroundTask() calls this function
 void FStreamSetGenerator::DoWork()
 {
+	if(RMC == nullptr)
+	{
+		return;
+	}
 	
 	FIntPoint CurrentChunk = RMC->GetPlayerLocatedChunk();
 	if ( CurrentChunk != RMC->PlayerChunk )
