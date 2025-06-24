@@ -70,7 +70,7 @@ void ARMCLandscape::Tick(float DeltaTime)
 
 void ARMCLandscape::AsyncGenerateLandscape()
 {
-	if( StreamSetgenerator == nullptr )
+	if( StreamSetGenerator == nullptr )
 	{
 		UE_LOG(LogTemp, Warning, TEXT("StreamSetGenerator nullptr"));
 		return;
