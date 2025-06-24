@@ -14,11 +14,6 @@ ARMCLandscape::ARMCLandscape()
 
 }
 
-ARMCLandscape::~ARMCLandscape()
-{
-	RemoveLandscape();
-}
-
 // Called when the game starts or when spawned
 void ARMCLandscape::BeginPlay()
 {

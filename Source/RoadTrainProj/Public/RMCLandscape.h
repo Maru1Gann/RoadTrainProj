@@ -27,7 +27,6 @@ class ROADTRAINPROJ_API ARMCLandscape : public AActor
 public:	
 	// Sets default values for this actor's properties
 	ARMCLandscape();
-	~ARMCLandscape();
 	
 	virtual void OnConstruction(const FTransform &Transform) override;
 	// Called every frame
