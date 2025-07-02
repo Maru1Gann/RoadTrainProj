@@ -549,7 +549,13 @@ float ARMCLandscape::GenerateHeight(const FVector2D& Location)
 
 	for ( int32 i = 0; i < PerlinNoiseLayers.Num(); i++)
 	{
-		float NoiseScale = 1.0f / PerlinNoiseLayers[i].Frequency;
+		float Frequency = PerlinNoiseLayers[i].Frequency;
+		if(Frequency == 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Perlin Noise frequency can't be 0"));
+			Frequency = 0.001;
+		}
+		float NoiseScale = 1.0f / Frequency;
 		float Amplitude = PerlinNoiseLayers[i].Amplitude;
 		float Offset = PerlinNoiseLayers[i].Offset;
 
