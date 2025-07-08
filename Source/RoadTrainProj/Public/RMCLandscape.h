@@ -35,7 +35,7 @@ public:
 
 	// -------------------Chunk Generation (RMC) ----------------------
 
-	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 1, ClampMin = "10.0", Step = "10.0", Units = "cm") )
+	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 1, ClampMin = "10.0", Step = "10.0", Units = "m") )
 	float VertexSpacing = 1000.0f;
 
 	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 2, ClampMin = "2", Step = "2") )
@@ -55,7 +55,7 @@ public:
 
 	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 1) )
 	bool bUseAsync = true;
-	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 2, ClampMin = "0.0", Step = "0.001") )
+	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 2, ClampMin = "0.0", Step = "0.001", Units = "s") )
 	float UpdatePeriod = 0.1f;
 
 	UPROPERTY( EditAnywhere, Category = "Chunks|Material")
