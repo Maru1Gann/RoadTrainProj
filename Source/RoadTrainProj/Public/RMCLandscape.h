@@ -61,6 +61,10 @@ public:
 	UPROPERTY( EditAnywhere, Category = "Chunks|Material")
 	UMaterialInterface* ChunkMaterial;
 
+	UPROPERTY( EditAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 1) )
+	FVector2D Start = FVector2D( 1000.f, 1000.f );
+	UPROPERTY( EditAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 2) )
+	FVector2D End = Start * 500;
 
 	void AsyncGenerateLandscape();
 
@@ -68,6 +72,9 @@ public:
 	void GenerateLandscape();
 	UFUNCTION( CallInEditor, Category = "Chunks" )
 	void RemoveLandscape();
+
+
+	
 
 	// -------------------Chunk Generation (RMC) ----------------------
 

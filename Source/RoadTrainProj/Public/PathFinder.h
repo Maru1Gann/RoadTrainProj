@@ -5,22 +5,21 @@
 #include "CoreMinimal.h"
 #include "RMCLandscape.h"
 
-
 class FPathFinder : public FRunnable
 {
+public:
 	FPathFinder(const ARMCLandscape& RMCLandscape, FVector2D Begin, FVector2D End, float Slope)
 	: Begin(Begin)
 	, End(End)
+	, SlopeSquared(Slope*Slope)
 	, VertexSpacing(RMCLandscape.VertexSpacing)
 	, VerticesPerChunk(RMCLandscape.VerticesPerChunk)
-	, SlopeSquared(Slope*Slope)
 	{
 		End3D = ConvertTo3D(End);
 		ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
 		Thread = FRunnableThread::Create(this, TEXT("PathFinder"));
 	} 
 
-public:
 	virtual bool Init() override;
 	virtual uint32 Run() override;
 	virtual void Exit() override;
@@ -61,4 +60,5 @@ private:
 	bool IsInBoundary(const FIntPoint& Chunk, const FVector2D& Pos);
 
 	TSet<FVector2D> GetDestSide(const FIntPoint& StartChunk, const FIntPoint& DestChunk);
+
 };

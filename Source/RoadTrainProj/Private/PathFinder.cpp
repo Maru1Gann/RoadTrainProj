@@ -34,7 +34,7 @@ void FPathFinder::Stop()
 // struct for high level (Chunk level) pathfinding
 struct ChunkNode
 {
-	explicit ChunkNode();
+	explicit ChunkNode() {}
 	explicit ChunkNode(FIntPoint Chunk, FVector2D Loc, float Priority) 
 	: Chunk(Chunk), Loc(Loc), Priority(Priority) {} 
 
@@ -44,11 +44,33 @@ struct ChunkNode
 };
 struct ChunkNodePredicate
 {
-	bool operator() (const ChunkNode& A, const ChunkNode& B) 
+	bool operator() (const ChunkNode& A, const ChunkNode& B) const
 	{
 		return A.Priority > B.Priority;
 	}
 };
+// declaration of struct for gate pathfinding
+struct Node
+{
+	// 암시적 형변환 금지. (explicit)
+	explicit Node() {}
+	explicit Node(FVector2D Loc, float Priority) : Loc(Loc), Priority(Priority) {}
+
+	FVector2D Loc;
+	float Priority;
+
+};
+// declaration of operator for Heap
+struct NodePredicate
+{
+	bool operator()(const Node& A, const Node& B) const
+	{
+		// true means B is prioritized.
+		// hence this makes mean heap.
+		return A.Priority > B.Priority;
+	}
+};
+
 
 // Final return needed is TArray of FVector2D -> makes a path.
 void FPathFinder::FindPath()
@@ -75,7 +97,7 @@ void FPathFinder::FindPath()
 	while( !Frontier.IsEmpty() )
 	{
 		ChunkNode Current;
-		Frontier.HeapPop( Current, false );
+		Frontier.HeapPop( Current, ChunkNodePredicate() );
 
 		// check if we've already been here.
 		// if so, we do the iteration only if it's less costly.
@@ -126,7 +148,7 @@ void FPathFinder::FindPath()
 				ChunkNode Next = ChunkNode( NextChunk, Tmp.Loc, INFLOAT );
 
 				// add only if we haven't been to NextChunk, or it's less costly.
-				float* OldCost = CostMap.Find( Next.Chunk );
+				OldCost = CostMap.Find( Next.Chunk );
 				if( OldCost == nullptr || *OldCost > Tmp.Priority )
 				{
 					CostMap.Add( Next.Chunk, Tmp.Priority );
@@ -143,29 +165,6 @@ void FPathFinder::FindPath()
 
 	return;
 }
-
-
-// declaration of struct for gate pathfinding
-struct Node
-{
-	// 암시적 형변환 금지. (explicit)
-	explicit Node();
-	explicit Node(FVector2D Loc, float Priority) : Loc(Loc), Priority(Priority) {}
-
-	FVector2D Loc;
-	float Priority;
-
-};
-// declaration of operator for Heap
-struct NodePredicate
-{
-	bool operator()(const Node& A, const Node& B) const
-	{
-		// true means B is prioritized.
-		// hence this makes mean heap.
-		return A.Priority > B.Priority;
-	}
-};
 
 // Let's find path to one side
 // and then return the first met gate (this will be our 'gate')
@@ -187,7 +186,7 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 	while( !Frontier.IsEmpty() )
 	{
 		Node Current;
-		Frontier.HeapPop( Current, false ); // out param
+		Frontier.HeapPop( Current, NodePredicate() ); // out param
 		FVector CurrentLoc3D = ConvertTo3D(Current.Loc);
 
 		// check if we've already been here.
@@ -256,7 +255,7 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 				}
 				
 				// check if it's new or less costly. (replaceable)
-				float* OldCost = CostMap.Find( Neighbor.Loc );
+				OldCost = CostMap.Find( Neighbor.Loc );
 				if( OldCost == nullptr || *OldCost > NewCost )
 				{
 					// TMap Add() replaces if overlaps
