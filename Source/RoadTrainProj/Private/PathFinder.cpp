@@ -15,7 +15,7 @@ bool FPathFinder::Init()
 uint32 FPathFinder::Run()
 {
     // work on dedicated thread
-
+	FindPath();
 
     return 0;
 }
@@ -31,8 +31,121 @@ void FPathFinder::Stop()
 }
 
 
+// struct for high level (Chunk level) pathfinding
+struct ChunkNode
+{
+	explicit ChunkNode();
+	explicit ChunkNode(FIntPoint Chunk, FVector2D Loc, float Priority) 
+	: Chunk(Chunk), Loc(Loc), Priority(Priority) {} 
 
-// declaration of struct for pathfinding
+	FIntPoint Chunk;
+	FVector2D Loc;
+	float Priority;
+};
+struct ChunkNodePredicate
+{
+	bool operator() (const ChunkNode& A, const ChunkNode& B) 
+	{
+		return A.Priority > B.Priority;
+	}
+};
+
+// Final return needed is TArray of FVector2D -> makes a path.
+void FPathFinder::FindPath()
+{
+	// from this->Begin to this->End
+	// Begin - Gates - ... - Gates - End
+	// we'll store this in TArray<FVector2D> Path (member var)
+	this->Path.Empty();
+
+	FIntPoint BeginChunk = GetChunk(this->Begin);
+	FIntPoint EndChunk = GetChunk(this->End);
+
+	TArray<ChunkNode> Frontier; // this is mean Heap.
+	Frontier.Heapify( ChunkNodePredicate() );
+	Frontier.HeapPush( ChunkNode( BeginChunk, Begin, 0.f), ChunkNodePredicate() );
+
+	// this is our map for cost.
+	TMap<FIntPoint, float> CostMap;
+	CostMap.Add( BeginChunk, 0.f );
+
+	// this is our map for path
+	TMap<FVector2D, FVector2D> Came_from;
+
+	while( !Frontier.IsEmpty() )
+	{
+		ChunkNode Current;
+		Frontier.HeapPop( Current, false );
+
+		// check if we've already been here.
+		// if so, we do the iteration only if it's less costly.
+		float* OldCost = CostMap.Find( Current.Chunk );
+		if( OldCost != nullptr && *OldCost + Heuristic( ConvertTo3D(Current.Loc) ) > Current.Priority )
+		{
+			continue;
+		}
+
+		// we met goal chunk
+		if( Current.Chunk == EndChunk )
+		{
+			// do the value passing
+			FVector2D Gate = Current.Loc;
+			this->Path.Add( Gate );
+			
+			while( Gate != this->Begin )
+			{
+				FVector2D* GateFrom = Came_from.Find(Gate);
+				
+				if( GateFrom == nullptr ) // error check
+				{
+					UE_LOG(LogTemp, Warning, TEXT(" Came_from nullptr, path error "));
+				}
+
+				this->Path.Add( *GateFrom );
+			}
+
+			this->Path.Add( this->Begin ); // path is made backwards.
+			return;
+		}
+
+		// we didn't meet goal chunk.
+		// 3x3 plane, widen frontier
+		for( int32 i = 0; i<3; i++ )
+		{
+			for (int32 j = 0; j<3; j++ )
+			{
+				if( i == 1 && j == 1) // when hit self.
+				{
+					continue;
+				}
+
+				FIntPoint NextChunk = Current.Chunk - FIntPoint(1,1) + FIntPoint( i, j );
+
+				// Tmp.priority == 'cost' ( for return of GetBestGate )
+				Node Tmp = GetBestGate( Current.Chunk, Current.Loc, GetDestSide(Current.Chunk, NextChunk) );
+				ChunkNode Next = ChunkNode( NextChunk, Tmp.Loc, INFLOAT );
+
+				// add only if we haven't been to NextChunk, or it's less costly.
+				float* OldCost = CostMap.Find( Next.Chunk );
+				if( OldCost == nullptr || *OldCost > Tmp.Priority )
+				{
+					CostMap.Add( Next.Chunk, Tmp.Priority );
+					Next.Priority = Tmp.Priority + Heuristic(Next.Loc);
+
+					Came_from.Add( Next.Loc, Current.Loc );
+					Frontier.HeapPush( Next, ChunkNodePredicate() );
+				}
+
+			}
+		}
+
+	} // end of while
+
+	return;
+}
+
+
+// declaration of struct for gate pathfinding
 struct Node
 {
 	// 암시적 형변환 금지. (explicit)
@@ -43,7 +156,6 @@ struct Node
 	float Priority;
 
 };
-
 // declaration of operator for Heap
 struct NodePredicate
 {
@@ -55,22 +167,14 @@ struct NodePredicate
 	}
 };
 
-
-// Final return needed is TArray of FVector2D -> makes a path.
-void FPathFinder::FindPath()
-{
-
-}
-
-
 // Let's find path to one side
 // and then return the first met gate (this will be our 'gate')
 // Chunk == current chunk we traverse.
 // will return Start if cannot traverse.
-FVector2D FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, const TSet<FVector2D>& ChunkSide)
+Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, const TSet<FVector2D>& ChunkSide)
 {
 	// we do A*
-	TArray<Node> Frontier; // this is Heap
+	TArray<Node> Frontier; // this is mean Heap
 	Frontier.Heapify( NodePredicate() );
 	Frontier.HeapPush( Node( Start, 0.f ), NodePredicate() );
 	
@@ -87,7 +191,7 @@ FVector2D FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Star
 		FVector CurrentLoc3D = ConvertTo3D(Current.Loc);
 
 		// check if we've already been here.
-		// if so, we do the process only if it's less costly.
+		// if so, we do the iteration only if it's less costly.
 		float* OldCost = CostMap.Find( Current.Loc );
 		if( OldCost != nullptr && *OldCost + Heuristic(CurrentLoc3D) > Current.Priority )
 		{
@@ -98,18 +202,19 @@ FVector2D FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Star
 		if( ChunkSide.Contains( Current.Loc ) ) 
 		{
 			float* FinalCost = CostMap.Find( Current.Loc );
+			// if cost != INFLOAT, return found gate.
 			if( FMath::IsFinite(*FinalCost) )
 			{
-				return Current.Loc;
+				// put 'cost' in 'priority' for return
+				return Node(Current.Loc, *FinalCost);
 			}
-			else
+			else // return Start since Cost == INF ( no route )
 			{
-				// return Start since Cost == INF
-				return Start;
+				
+				return Node(Start, INFLOAT);
 			}
 		}
 
-		
 
 		// for all neighbors (total 8, ignore '5'(current) )
 		//	7	8	9
@@ -125,13 +230,13 @@ FVector2D FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Star
 
 			for( int32 j = 0; j<3; j++ )
 			{
-				if( j == 1 && i == 1) // ignore current('5')
+				// ignore cur('5')
+				if( j == 1 && i == 1) 
 				{
 					continue;
 				}
-				
-				float StepX = j * VertexSpacing;
 
+				float StepX = j * VertexSpacing;
 				Node Neighbor;
 				Neighbor.Loc = FVector2D( Loc.X + StepX, Loc.Y + StepY );
 
@@ -141,16 +246,16 @@ FVector2D FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Star
 					continue;
 				}
 
+				float NewCost = INFLOAT;
 				FVector NeighborLoc3D = ConvertTo3D(Neighbor.Loc);
 
 				// check slope
-				float NewCost = INFLOAT;
 				if( GetSlopeSquared( CurrentLoc3D, NeighborLoc3D ) <= SlopeSquared )
 				{
 					NewCost = GetDistSquared( CurrentLoc3D, NeighborLoc3D );
 				}
 				
-
+				// check if it's new or less costly. (replaceable)
 				float* OldCost = CostMap.Find( Neighbor.Loc );
 				if( OldCost == nullptr || *OldCost > NewCost )
 				{
@@ -162,12 +267,11 @@ FVector2D FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Star
 				}
 
 			}
-
-		}
+		} // end of for loop
 
 	} // end of while
 
-	return Start;
+	return Node(Start, INFLOAT);
 }
 
 
@@ -259,4 +363,76 @@ bool FPathFinder::IsInBoundary(const FIntPoint &Chunk, const FVector2D &Pos)
 	bool bInY = (Pos.Y >= Offset.Y - SmallValue ) && ( Pos.Y <=  Offset.Y + ChunkLength + SmallValue );
 
 	return bInX && bInY;
+}
+
+// returns set of destination chunk's side vertices.
+// 8 cases total
+TSet<FVector2D> FPathFinder::GetDestSide(const FIntPoint& StartChunk, const FIntPoint& DestChunk)
+{
+	TSet<FVector2D> ChunkSide;
+	FVector2D Offset = FVector2D( StartChunk.X , StartChunk.Y ) * ChunkLength;
+
+	FIntPoint Case = DestChunk - StartChunk;
+	// Case value ( depends on DestChunk Location )
+	//(-1,1)	(0,1)	(1,1)
+	//(-1,0)	S		(1,0)
+	//(-1,-1)	(0,-1)	(1,-1)
+
+	if( Case.X > 1 || Case.X <-1 || 
+		Case.Y > 1 || Case.Y < -1 )
+	{
+		ChunkSide.Empty(); // this is error.
+		return ChunkSide;
+	}
+	else if( Case == FIntPoint(1,1) ) // Diagonal
+	{
+		ChunkSide.Add( Offset + FVector2D( ChunkLength, ChunkLength ) );
+	}
+	else if( Case == FIntPoint(1,0) )
+	{
+		for(int32 i = 0 ; i < VerticesPerChunk; i++)
+		{
+			FVector2D Side = FVector2D( ChunkLength, VertexSpacing * i );
+			ChunkSide.Add( Offset + Side );
+		}
+	}
+	else if( Case == FIntPoint(1,-1) ) // Diagonal
+	{
+		ChunkSide.Add( Offset + FVector2D( ChunkLength, 0.f ) );
+	}
+	else if( Case == FIntPoint(0,1) )
+	{
+		for(int32 i = 0 ; i < VerticesPerChunk; i++)
+		{
+			FVector2D Side = FVector2D( VertexSpacing * i, ChunkLength );
+			ChunkSide.Add( Offset + Side );
+		}
+	}
+	else if( Case == FIntPoint(0,-1) )
+	{
+		for(int32 i = 0 ; i < VerticesPerChunk; i++)
+		{
+			FVector2D Side = FVector2D( VertexSpacing * i, 0.f );
+			ChunkSide.Add( Offset + Side );
+		}
+	}
+	else if( Case == FIntPoint(-1,1) ) // Diagonal
+	{
+		ChunkSide.Add( Offset + FVector2D( -ChunkLength, ChunkLength ) );
+	}
+	else if( Case == FIntPoint(-1,0) )
+	{
+		for(int32 i = 0 ; i < VerticesPerChunk; i++)
+		{
+			FVector2D Side = FVector2D( 0.f , VertexSpacing * i );
+			ChunkSide.Add( Offset + Side );
+		}
+	}
+	else if( Case == FIntPoint(-1,-1) ) // Diagonal
+	{
+		ChunkSide.Add( Offset + FVector2D( -ChunkLength, -ChunkLength ) );
+	}
+
+
+	return ChunkSide;
 }

@@ -42,7 +42,8 @@ private:
 	TArray<FVector2D> Path;
 
 	void FindPath();
-	FVector2D GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, const TSet<FVector2D>& ChunkSide);
+	// forward declaration of 'Node'
+	struct Node GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, const TSet<FVector2D>& ChunkSide);
 
 	// tools
 	float GetHeight(const FVector2D& Location);
@@ -58,4 +59,6 @@ private:
 	float GetSlopeSquared(const FVector& Current, const FVector& Next);
 
 	bool IsInBoundary(const FIntPoint& Chunk, const FVector2D& Pos);
+
+	TSet<FVector2D> GetDestSide(const FIntPoint& StartChunk, const FIntPoint& DestChunk);
 };
