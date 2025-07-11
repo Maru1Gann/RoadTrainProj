@@ -8,8 +8,6 @@
 #include "RealtimeMeshActor.h"
 #include "RealtimeMeshSimple.h"
 
-#include "PerlinNoiseVariables.h"
-
 #include "PCGComponent.h"
 #include "PCGGraph.h"
 
@@ -35,7 +33,7 @@ public:
 
 	// -------------------Chunk Generation (RMC) ----------------------
 
-	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 1, ClampMin = "10.0", Step = "10.0", Units = "m") )
+	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 1, ClampMin = "10.0", Step = "10.0", Units = "cm") )
 	float VertexSpacing = 1000.0f;
 
 	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 2, ClampMin = "2", Step = "2") )
@@ -51,7 +49,7 @@ public:
 	bool ShouldGenerateHeight = true;
 
 	UPROPERTY( EditAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 2) )
-	TArray<FPerlinNoiseVariables> PerlinNoiseLayers;
+	TArray<struct FPerlinNoiseVariables> PerlinNoiseLayers;
 
 	UPROPERTY( EditAnywhere, Category = "Chunks|Update", meta = (DisplayPriority = 1) )
 	bool bUseAsync = true;
@@ -61,10 +59,14 @@ public:
 	UPROPERTY( EditAnywhere, Category = "Chunks|Material")
 	UMaterialInterface* ChunkMaterial;
 
+	UPROPERTY( EditAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 0) )
+	bool DoPathFinding = false;
 	UPROPERTY( EditAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 1) )
 	FVector2D Start = FVector2D( 1000.f, 1000.f );
 	UPROPERTY( EditAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 2) )
 	FVector2D End = Start * 500;
+	UPROPERTY( EditAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 2) )
+	float Slope = 30;
 
 	void AsyncGenerateLandscape();
 
@@ -74,7 +76,10 @@ public:
 	void RemoveLandscape();
 
 
-	
+	// PathFinding stuffs
+	void SetPath(const TArray<FVector2D>& ReversePath);
+	void DrawPathDebug();
+
 
 	// -------------------Chunk Generation (RMC) ----------------------
 
@@ -112,6 +117,10 @@ private:
 	float ChunkLength;
 	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 7) )
 	float HorizonDistance;
+	UPROPERTY( VisibleAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 4))
+	FVector2D StartPos;
+	UPROPERTY( VisibleAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 5))
+	FVector2D EndPos;
 
 	// Get ChunkCoord of Player
 	FIntPoint GetPlayerLocatedChunk();
@@ -123,10 +132,16 @@ private:
 
 	float GetElapsedInMs(const FDateTime& StartTime);
 
-	FAsyncTask<FStreamSetGenerator>* StreamSetGenerator;
+	FVector2D SnapToGrid(const FVector2D& Location);
 
-	
+	FAsyncTask<FStreamSetGenerator>* StreamSetGenerator;
+	class FPathFinder* PathFinder;
+
+
+	TArray<FVector2D> Path;
 };
+
+
 
 class FStreamSetGenerator : public FNonAbandonableTask
 {

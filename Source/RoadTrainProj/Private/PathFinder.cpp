@@ -2,7 +2,11 @@
 
 
 #include "PathFinder.h"
+#include "RMCLandscape.h"
+#include "PerlinNoiseVariables.h"
 #include <limits>
+
+#include "Async/Async.h" // for Exit(). check the func.
 
 const float INFLOAT = std::numeric_limits<float>::infinity(); // float INF for obstacles
 
@@ -16,6 +20,8 @@ uint32 FPathFinder::Run()
 {
     // work on dedicated thread
 	FindPath();
+	RMCLandscape->SetPath(this->Path);
+	UE_LOG(LogTemp, Display, TEXT("PathFinding Done!!!"));
 
     return 0;
 }
@@ -23,6 +29,14 @@ uint32 FPathFinder::Run()
 void FPathFinder::Exit()
 {
     // Post-Run code, threaded
+
+	AsyncTask(ENamedThreads::GameThread, 
+		[this]()
+		{
+			this->RMCLandscape->DrawPathDebug();
+		}
+	);
+
 }
 
 void FPathFinder::Stop()
@@ -71,6 +85,20 @@ struct NodePredicate
 	}
 };
 
+FPathFinder::FPathFinder( ARMCLandscape* RMCLandscape, const FVector2D& Begin, const FVector2D& End, const float& Slope )
+{
+	this->RMCLandscape = RMCLandscape;
+	this->Begin = Begin;
+	this->End  = End;
+	this->SlopeSquared = Slope*Slope;
+	this->VertexSpacing = RMCLandscape->VertexSpacing;
+	this->VerticesPerChunk = RMCLandscape->VerticesPerChunk;
+	this->NoiseLayers = RMCLandscape->PerlinNoiseLayers;
+
+	End3D = ConvertTo3D(End);
+	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
+	Thread = FRunnableThread::Create(this, TEXT("PathFinder"));
+}
 
 // Final return needed is TArray of FVector2D -> makes a path.
 void FPathFinder::FindPath()
@@ -82,6 +110,8 @@ void FPathFinder::FindPath()
 
 	FIntPoint BeginChunk = GetChunk(this->Begin);
 	FIntPoint EndChunk = GetChunk(this->End);
+	UE_LOG(LogTemp, Display, TEXT("BeginChunk : %d, %d"), BeginChunk.X, BeginChunk.Y);
+	UE_LOG(LogTemp, Display, TEXT("EndChunk : %d, %d"), EndChunk.X, EndChunk.Y);
 
 	TArray<ChunkNode> Frontier; // this is mean Heap.
 	Frontier.Heapify( ChunkNodePredicate() );
@@ -96,6 +126,8 @@ void FPathFinder::FindPath()
 
 	while( !Frontier.IsEmpty() )
 	{
+		UE_LOG(LogTemp, Display, TEXT("HighLevel while"));
+
 		ChunkNode Current;
 		Frontier.HeapPop( Current, ChunkNodePredicate() );
 
@@ -104,12 +136,16 @@ void FPathFinder::FindPath()
 		float* OldCost = CostMap.Find( Current.Chunk );
 		if( OldCost != nullptr && *OldCost + Heuristic( ConvertTo3D(Current.Loc) ) > Current.Priority )
 		{
+			UE_LOG(LogTemp, Display, TEXT("H continue"));
+
 			continue;
 		}
 
 		// we met goal chunk
 		if( Current.Chunk == EndChunk )
 		{
+			UE_LOG(LogTemp, Display, TEXT("H met goal chunk"));
+
 			// do the value passing
 			FVector2D Gate = Current.Loc;
 			this->Path.Add( Gate );
@@ -144,7 +180,7 @@ void FPathFinder::FindPath()
 				FIntPoint NextChunk = Current.Chunk - FIntPoint(1,1) + FIntPoint( i, j );
 
 				// Tmp.priority == 'cost' ( for return of GetBestGate )
-				Node Tmp = GetBestGate( Current.Chunk, Current.Loc, GetDestSide(Current.Chunk, NextChunk) );
+				Node Tmp = GetBestGate( Current.Chunk, Current.Loc, GetDestSide( Current.Chunk, NextChunk) );
 				ChunkNode Next = ChunkNode( NextChunk, Tmp.Loc, INFLOAT );
 
 				// add only if we haven't been to NextChunk, or it's less costly.
@@ -163,6 +199,7 @@ void FPathFinder::FindPath()
 
 	} // end of while
 
+	UE_LOG(LogTemp, Warning, TEXT(" H level while ended "));
 	return;
 }
 
@@ -185,6 +222,8 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 
 	while( !Frontier.IsEmpty() )
 	{
+		UE_LOG(LogTemp, Display, TEXT("LowLevel while"));
+
 		Node Current;
 		Frontier.HeapPop( Current, NodePredicate() ); // out param
 		FVector CurrentLoc3D = ConvertTo3D(Current.Loc);
@@ -204,6 +243,7 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 			// if cost != INFLOAT, return found gate.
 			if( FMath::IsFinite(*FinalCost) )
 			{
+				
 				// put 'cost' in 'priority' for return
 				return Node(Current.Loc, *FinalCost);
 			}

@@ -3,22 +3,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "RMCLandscape.h"
 
 class FPathFinder : public FRunnable
 {
 public:
-	FPathFinder(const ARMCLandscape& RMCLandscape, FVector2D Begin, FVector2D End, float Slope)
-	: Begin(Begin)
-	, End(End)
-	, SlopeSquared(Slope*Slope)
-	, VertexSpacing(RMCLandscape.VertexSpacing)
-	, VerticesPerChunk(RMCLandscape.VerticesPerChunk)
-	{
-		End3D = ConvertTo3D(End);
-		ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
-		Thread = FRunnableThread::Create(this, TEXT("PathFinder"));
-	} 
+	FPathFinder(class ARMCLandscape* RMCLandscape, const FVector2D& Begin, const FVector2D& End, const float& Slope);
 
 	virtual bool Init() override;
 	virtual uint32 Run() override;
@@ -28,15 +17,16 @@ public:
 	FRunnableThread* Thread;
 
 private:
-	const FVector2D Begin;
-	const FVector2D End;
+	ARMCLandscape* RMCLandscape;
+	FVector2D Begin;
+	FVector2D End;
 	FVector End3D;
-	const float SlopeSquared;
+	float SlopeSquared;
 
-	const float VertexSpacing;
-	const int32 VerticesPerChunk;
+	float VertexSpacing;
+	int32 VerticesPerChunk;
 	float ChunkLength;
-	const TArray<FPerlinNoiseVariables> NoiseLayers;
+	TArray<struct FPerlinNoiseVariables> NoiseLayers;
 
 	TArray<FVector2D> Path;
 

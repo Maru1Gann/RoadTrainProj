@@ -2,7 +2,11 @@
 
 
 #include "RMCLandscape.h"
+#include "PerlinNoiseVariables.h"
 #include "Mesh/RealtimeMeshAlgo.h"
+#include "PathFinder.h"
+
+#include "DrawDebugHelpers.h"
 
 // Sets default values
 ARMCLandscape::ARMCLandscape()
@@ -12,13 +16,36 @@ ARMCLandscape::ARMCLandscape()
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	PerlinNoiseLayers.Add( FPerlinNoiseVariables(10000.0f, 1000.0f, 1.0f) );
 
-	StreamSetGenerator = new FAsyncTask<FStreamSetGenerator>(this);
 }
 
 // Called when the game starts or when spawned
 void ARMCLandscape::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if( DoPathFinding )
+	{
+		PathFinder = new FPathFinder(this, StartPos, EndPos, Slope );
+
+		PathFinder->Run();
+		
+		DrawDebugPoint(
+		this->GetWorld(),
+		FVector(StartPos.X, StartPos.Y, GenerateHeight(StartPos) + 100.f ),
+		100.f,
+		FColor::Blue,
+		true
+		);
+
+		DrawDebugPoint(
+		this->GetWorld(),
+		FVector(EndPos.X, EndPos.Y, GenerateHeight(EndPos) + 100.f ),
+		100.f,
+		FColor::Blue,
+		true
+		);
+	}
+	
 
 	// RMC Chunk Generation ↓
 	GenerateChunkOrder();
@@ -27,6 +54,8 @@ void ARMCLandscape::BeginPlay()
 	FTimerHandle LandscapeTimer;
 	if( bUseAsync )
 	{
+		StreamSetGenerator = new FAsyncTask<FStreamSetGenerator>(this);
+
 		GetWorldTimerManager().SetTimer(
 			LandscapeTimer,
 			this,
@@ -56,6 +85,9 @@ void ARMCLandscape::OnConstruction(const FTransform &Transform)
 	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
 	HorizonDistance = (ChunkLength/2 + ChunkLength * ChunkRadius) / (100*1000); // km
 	GenerateChunkOrder();
+
+	StartPos = SnapToGrid(Start);
+	EndPos = SnapToGrid(End);
 }
 
 // Called every frame
@@ -203,6 +235,37 @@ void ARMCLandscape::RemoveLandscape()
 	return;
 }
 
+
+void ARMCLandscape::SetPath(const TArray<FVector2D>& ReversePath)
+{
+	int32 LastIndex = ReversePath.Num() - 1;
+	this->Path.Empty();
+	this->Path.SetNum( LastIndex + 1);
+	for( int32 i = 0; i <= LastIndex; i++ )
+	{
+		Path[i] = ReversePath[LastIndex - i];
+	}
+
+	return;
+}
+void ARMCLandscape::DrawPathDebug()
+{
+	UE_LOG(LogTemp, Display, TEXT("Path Num : %d"), this->Path.Num());
+
+	for( int32 i = 0; i < Path.Num(); i++ )
+	{
+		FVector Point = FVector(Path[i].X, Path[i].Y, GenerateHeight(Path[i]) + 100.f );
+		UE_LOG(LogTemp, Display, TEXT("Path[%d] : %s"), i, *Point.ToString());
+
+		DrawDebugPoint(
+			this->GetWorld(),
+			Point,
+			100.f,
+			FColor::Red,
+			true
+		);
+	}
+}
 // Public ↑
 
 // Private ↓
@@ -581,6 +644,14 @@ float ARMCLandscape::GetElapsedInMs(const FDateTime &StartTime)
 	return (FDateTime::UtcNow() - StartTime).GetTotalMilliseconds();
 }
 
+FVector2D ARMCLandscape::SnapToGrid(const FVector2D &Location)
+{
+	FVector2D Out;
+	Out.X = FMath::FloorToInt(Location.X / VertexSpacing ) * VertexSpacing;
+	Out.Y = FMath::FloorToInt(Location.Y / VertexSpacing ) * VertexSpacing;
+
+    return Out;
+}
 
 // StartBackgroundTask() calls this function
 void FStreamSetGenerator::DoWork()
