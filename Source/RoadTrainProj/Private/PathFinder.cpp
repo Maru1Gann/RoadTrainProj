@@ -64,14 +64,15 @@ uint32 FPathFinder::Run()
 	// FindPath();
 	// RMCLandscape->SetPath(this->Path);
 
-	// TSet<FVector2D> Test = GetDestSide( GetChunk(Begin), GetChunk(End) );
-	// for (auto& Elem : Test)
-	// {
-	// 	UE_LOG(LogTemp, Display, TEXT("Dest : %s"), *Elem.ToString() );
-	// }
+	TSet<FVector2D> Test = GetDestSide( GetChunk(Begin), GetChunk(End) );
+	for (auto& Elem : Test)
+	{
+		UE_LOG(LogTemp, Display, TEXT("Dest : %s"), *Elem.ToString() );
+	}
 	
 	Node Temp = GetBestGate( GetChunk(Begin), this->Begin, GetDestSide( GetChunk(Begin), GetChunk(End) ) );
-	UE_LOG(LogTemp, Display, TEXT("Node pos %s"), *Temp.Loc.ToString());
+	UE_LOG(LogTemp, Display, TEXT("Gate pos %s"), *Temp.Loc.ToString());
+	Path.Add(Temp.Loc);
 
 	RMCLandscape->SetPath(Path);
 
@@ -256,7 +257,6 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 
 
 		// DEBUGGING@@@@@!!!!!!!
-		UE_LOG(LogTemp, Display, TEXT("Priority : %f "), Current.Priority);
 		Path.Add(Current.Loc);
 		// DEBUGGING@@@@@!!!!!!!
 
@@ -272,6 +272,7 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 			}
 			else // return Start since Cost == INF ( no route )
 			{
+				UE_LOG(LogTemp, Warning, TEXT("LowLevel A* Failed"));
 				return Node(Start, INFLOAT);
 			}
 		}
@@ -311,10 +312,15 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 				FVector NeighborLoc3D = ConvertTo3D(Neighbor.Loc);
 
 				// check slope
-				if( GetSlopeSquared( CurrentLoc3D, NeighborLoc3D ) <= SlopeSquared )
+				float SlopeCheck = GetSlopeSquared( CurrentLoc3D, NeighborLoc3D );
+				if( SlopeCheck <= SlopeSquared )
 				{
 					NewCost = GetDistSquared( CurrentLoc3D, NeighborLoc3D );
 				}
+				// else
+				// {
+				// 	UE_LOG(LogTemp, Warning, TEXT("Slope hit : %f < %f"), SlopeSquared, SlopeCheck );
+				// }
 				
 				// check if it's new or less costly. (replaceable)
 				OldCost = CostMap.Find( Neighbor.Loc );
@@ -479,7 +485,7 @@ TSet<FVector2D> FPathFinder::GetDestSide(const FIntPoint& StartChunk, const FInt
 	}
 	else if( Case == FIntPoint(-1,1) ) // Diagonal
 	{
-		ChunkSide.Add( Offset + FVector2D( -ChunkLength, ChunkLength ) );
+		ChunkSide.Add( Offset + FVector2D( 0.f, ChunkLength ) );
 	}
 	else if( Case == FIntPoint(-1,0) )
 	{
@@ -491,7 +497,7 @@ TSet<FVector2D> FPathFinder::GetDestSide(const FIntPoint& StartChunk, const FInt
 	}
 	else if( Case == FIntPoint(-1,-1) ) // Diagonal
 	{
-		ChunkSide.Add( Offset + FVector2D( -ChunkLength, -ChunkLength ) );
+		ChunkSide.Add( Offset + FVector2D( 0.f, 0.f ) );
 	}
 
 
