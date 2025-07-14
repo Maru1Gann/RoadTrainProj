@@ -10,6 +10,48 @@
 
 const float INFLOAT = std::numeric_limits<float>::infinity(); // float INF for obstacles
 
+// struct for high level (Chunk level) pathfinding
+struct ChunkNode
+{
+	explicit ChunkNode() {}
+	explicit ChunkNode(FIntPoint Chunk, FVector2D Loc, float Priority) 
+	: Chunk(Chunk), Loc(Loc), Priority(Priority) {} 
+
+	FIntPoint Chunk;
+	FVector2D Loc;
+	float Priority;
+};
+struct ChunkNodePredicate
+{
+	bool operator() (const ChunkNode& A, const ChunkNode& B) const
+	{
+		return A.Priority < B.Priority;
+	}
+};
+// declaration of struct for gate pathfinding
+struct Node
+{
+	// 암시적 형변환 금지. (explicit)
+	explicit Node() {}
+	explicit Node(FVector2D Loc, float Priority) : Loc(Loc), Priority(Priority) {}
+
+	FVector2D Loc;
+	float Priority;
+
+};
+// declaration of operator for Heap
+struct NodePredicate
+{
+	bool operator()(const Node& A, const Node& B) const
+	{
+		// true means B is prioritized.
+		// hence this makes mean heap.
+		return A.Priority < B.Priority;
+	}
+};
+
+// -------------------temporary struct declaration-------------------
+
 bool FPathFinder::Init()
 {
     // Should the thread start?
@@ -19,8 +61,20 @@ bool FPathFinder::Init()
 uint32 FPathFinder::Run()
 {
     // work on dedicated thread
-	FindPath();
-	RMCLandscape->SetPath(this->Path);
+	// FindPath();
+	// RMCLandscape->SetPath(this->Path);
+
+	// TSet<FVector2D> Test = GetDestSide( GetChunk(Begin), GetChunk(End) );
+	// for (auto& Elem : Test)
+	// {
+	// 	UE_LOG(LogTemp, Display, TEXT("Dest : %s"), *Elem.ToString() );
+	// }
+	
+	Node Temp = GetBestGate( GetChunk(Begin), this->Begin, GetDestSide( GetChunk(Begin), GetChunk(End) ) );
+	UE_LOG(LogTemp, Display, TEXT("Node pos %s"), *Temp.Loc.ToString());
+
+	RMCLandscape->SetPath(Path);
+
 	UE_LOG(LogTemp, Display, TEXT("PathFinding Done!!!"));
 
     return 0;
@@ -44,52 +98,11 @@ void FPathFinder::Stop()
     // when Thread->Kill() called, Stop() goes off.
 }
 
-
-// struct for high level (Chunk level) pathfinding
-struct ChunkNode
-{
-	explicit ChunkNode() {}
-	explicit ChunkNode(FIntPoint Chunk, FVector2D Loc, float Priority) 
-	: Chunk(Chunk), Loc(Loc), Priority(Priority) {} 
-
-	FIntPoint Chunk;
-	FVector2D Loc;
-	float Priority;
-};
-struct ChunkNodePredicate
-{
-	bool operator() (const ChunkNode& A, const ChunkNode& B) const
-	{
-		return A.Priority > B.Priority;
-	}
-};
-// declaration of struct for gate pathfinding
-struct Node
-{
-	// 암시적 형변환 금지. (explicit)
-	explicit Node() {}
-	explicit Node(FVector2D Loc, float Priority) : Loc(Loc), Priority(Priority) {}
-
-	FVector2D Loc;
-	float Priority;
-
-};
-// declaration of operator for Heap
-struct NodePredicate
-{
-	bool operator()(const Node& A, const Node& B) const
-	{
-		// true means B is prioritized.
-		// hence this makes mean heap.
-		return A.Priority > B.Priority;
-	}
-};
-
 FPathFinder::FPathFinder( ARMCLandscape* RMCLandscape, const FVector2D& Begin, const FVector2D& End, const float& Slope )
 {
 	this->RMCLandscape = RMCLandscape;
 	this->Begin = Begin;
-	this->End  = End;
+	this->End = End;
 	this->SlopeSquared = Slope*Slope;
 	this->VertexSpacing = RMCLandscape->VertexSpacing;
 	this->VerticesPerChunk = RMCLandscape->VerticesPerChunk;
@@ -134,7 +147,7 @@ void FPathFinder::FindPath()
 		// check if we've already been here.
 		// if so, we do the iteration only if it's less costly.
 		float* OldCost = CostMap.Find( Current.Chunk );
-		if( OldCost != nullptr && *OldCost + Heuristic( ConvertTo3D(Current.Loc) ) > Current.Priority )
+		if( OldCost != nullptr && *OldCost + Heuristic( ConvertTo3D(Current.Loc) ) < Current.Priority )
 		{
 			UE_LOG(LogTemp, Display, TEXT("H continue"));
 
@@ -178,6 +191,7 @@ void FPathFinder::FindPath()
 				}
 
 				FIntPoint NextChunk = Current.Chunk - FIntPoint(1,1) + FIntPoint( i, j );
+				UE_LOG(LogTemp, Display, TEXT(" NextChunk %s"), *NextChunk.ToString());
 
 				// Tmp.priority == 'cost' ( for return of GetBestGate )
 				Node Tmp = GetBestGate( Current.Chunk, Current.Loc, GetDestSide( Current.Chunk, NextChunk) );
@@ -209,6 +223,11 @@ void FPathFinder::FindPath()
 // will return Start if cannot traverse.
 Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, const TSet<FVector2D>& ChunkSide)
 {
+	if( ChunkSide.IsEmpty() )
+	{
+		UE_LOG(LogTemp, Warning, TEXT(" ChunkSide Empty "));
+		return Node();
+	}
 	// we do A*
 	TArray<Node> Frontier; // this is mean Heap
 	Frontier.Heapify( NodePredicate() );
@@ -222,7 +241,6 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 
 	while( !Frontier.IsEmpty() )
 	{
-		UE_LOG(LogTemp, Display, TEXT("LowLevel while"));
 
 		Node Current;
 		Frontier.HeapPop( Current, NodePredicate() ); // out param
@@ -231,10 +249,16 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 		// check if we've already been here.
 		// if so, we do the iteration only if it's less costly.
 		float* OldCost = CostMap.Find( Current.Loc );
-		if( OldCost != nullptr && *OldCost + Heuristic(CurrentLoc3D) > Current.Priority )
+		if( OldCost != nullptr && *OldCost + Heuristic(CurrentLoc3D) < Current.Priority )
 		{
 			continue;
 		}
+
+
+		// DEBUGGING@@@@@!!!!!!!
+		UE_LOG(LogTemp, Display, TEXT("Priority : %f "), Current.Priority);
+		Path.Add(Current.Loc);
+		// DEBUGGING@@@@@!!!!!!!
 
 		// if frontier met the side of the chunk ( if met destination )
 		if( ChunkSide.Contains( Current.Loc ) ) 
@@ -243,13 +267,11 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 			// if cost != INFLOAT, return found gate.
 			if( FMath::IsFinite(*FinalCost) )
 			{
-				
 				// put 'cost' in 'priority' for return
 				return Node(Current.Loc, *FinalCost);
 			}
 			else // return Start since Cost == INF ( no route )
 			{
-				
 				return Node(Start, INFLOAT);
 			}
 		}
@@ -418,7 +440,7 @@ TSet<FVector2D> FPathFinder::GetDestSide(const FIntPoint& StartChunk, const FInt
 	//(-1,-1)	(0,-1)	(1,-1)
 
 	if( Case.X > 1 || Case.X <-1 || 
-		Case.Y > 1 || Case.Y < -1 )
+		Case.Y > 1 || Case.Y < -1 || StartChunk == DestChunk )
 	{
 		ChunkSide.Empty(); // this is error.
 		return ChunkSide;

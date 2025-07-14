@@ -26,24 +26,23 @@ void ARMCLandscape::BeginPlay()
 	if( DoPathFinding )
 	{
 		PathFinder = new FPathFinder(this, StartPos, EndPos, Slope );
-
-		PathFinder->Run();
 		
 		DrawDebugPoint(
-		this->GetWorld(),
-		FVector(StartPos.X, StartPos.Y, GenerateHeight(StartPos) + 100.f ),
-		100.f,
-		FColor::Blue,
-		true
+			this->GetWorld(),
+			ConvertTo3D(StartPos),
+			30.f,
+			FColor::Blue,
+			true
 		);
 
 		DrawDebugPoint(
-		this->GetWorld(),
-		FVector(EndPos.X, EndPos.Y, GenerateHeight(EndPos) + 100.f ),
-		100.f,
-		FColor::Blue,
-		true
+			this->GetWorld(),
+			ConvertTo3D(EndPos),
+			30.f,
+			FColor::Blue,
+			true
 		);
+
 	}
 	
 
@@ -88,6 +87,9 @@ void ARMCLandscape::OnConstruction(const FTransform &Transform)
 
 	StartPos = SnapToGrid(Start);
 	EndPos = SnapToGrid(End);
+
+	StartChunk = GetChunk(StartPos);
+	EndChunk = GetChunk(EndPos);
 }
 
 // Called every frame
@@ -255,12 +257,12 @@ void ARMCLandscape::DrawPathDebug()
 	for( int32 i = 0; i < Path.Num(); i++ )
 	{
 		FVector Point = FVector(Path[i].X, Path[i].Y, GenerateHeight(Path[i]) + 100.f );
-		UE_LOG(LogTemp, Display, TEXT("Path[%d] : %s"), i, *Point.ToString());
+		// UE_LOG(LogTemp, Display, TEXT("Path[%d] : %s"), i, *Point.ToString());
 
 		DrawDebugPoint(
 			this->GetWorld(),
 			Point,
-			100.f,
+			10.f,
 			FColor::Red,
 			true
 		);
@@ -589,15 +591,23 @@ void ARMCLandscape::GenerateChunkOrder()
 
 FIntPoint ARMCLandscape::GetPlayerLocatedChunk()
 {
-	FIntPoint ChunkCoord = FIntPoint(0,0);
+	FIntPoint ChunkCoord;
 
 	if( GetWorld()->GetFirstPlayerController() )
 	{
 		FVector PlayerLocation = GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorLocation();
-		ChunkCoord.X = FMath::FloorToInt32( PlayerLocation.X / ChunkLength );
-		ChunkCoord.Y = FMath::FloorToInt32( PlayerLocation.Y / ChunkLength );
+		ChunkCoord = GetChunk( FVector2D(PlayerLocation.X, PlayerLocation.Y) );
 	}
 	
+	return ChunkCoord;
+}
+
+FIntPoint ARMCLandscape::GetChunk(const FVector2D& Location)
+{
+	FIntPoint ChunkCoord;
+	ChunkCoord.X = FMath::FloorToInt32( Location.X / ChunkLength );
+	ChunkCoord.Y = FMath::FloorToInt32( Location.Y / ChunkLength );
+
 	return ChunkCoord;
 }
 
@@ -626,6 +636,11 @@ float ARMCLandscape::GenerateHeight(const FVector2D& Location)
 	}
 
 	return height;
+}
+
+FVector ARMCLandscape::ConvertTo3D(const FVector2D& Loc)
+{
+	return FVector(Loc.X, Loc.Y, GenerateHeight(Loc) );
 }
 
 void ARMCLandscape::RemoveChunk(const FIntPoint &ChunkCoord)

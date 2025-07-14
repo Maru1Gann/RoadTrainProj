@@ -117,16 +117,23 @@ private:
 	float ChunkLength;
 	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 7) )
 	float HorizonDistance;
+
 	UPROPERTY( VisibleAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 4))
 	FVector2D StartPos;
 	UPROPERTY( VisibleAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 5))
 	FVector2D EndPos;
+	UPROPERTY( VisibleAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 6))
+	FIntPoint StartChunk;
+	UPROPERTY( VisibleAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 7))
+	FIntPoint EndChunk;
 
 	// Get ChunkCoord of Player
 	FIntPoint GetPlayerLocatedChunk();
+	FIntPoint GetChunk(const FVector2D& Location);
 
 	// Generate Height with PerlinNoise
 	float GenerateHeight(const FVector2D& Location);
+	FVector ConvertTo3D(const FVector2D& Loc);
 
 	void RemoveChunk(const FIntPoint& ChunkCoord);
 
