@@ -64,18 +64,20 @@ uint32 FPathFinder::Run()
 	// FindPath();
 	// RMCLandscape->SetPath(this->Path);
 
-	TSet<FVector2D> Test = GetDestSide( GetChunk(Begin), GetChunk(End) );
-	for (auto& Elem : Test)
-	{
-		UE_LOG(LogTemp, Display, TEXT("Dest : %s"), *Elem.ToString() );
-	}
+	// TSet<FVector2D> Test = GetDestSide( GetChunk(Begin), GetChunk(End) );
+	// for (auto& Elem : Test)
+	// {
+	// 	UE_LOG(LogTemp, Display, TEXT("Dest : %s"), *Elem.ToString() );
+	// }
 	
-	Node Temp = GetBestGate( GetChunk(Begin), this->Begin, GetDestSide( GetChunk(Begin), GetChunk(End) ) );
-	UE_LOG(LogTemp, Display, TEXT("Gate pos %s"), *Temp.Loc.ToString());
-	Path.Add(Temp.Loc);
+	// Node Temp = GetBestGate( GetChunk(Begin), this->Begin, GetDestSide( GetChunk(Begin), GetChunk(End) ) );
+	// UE_LOG(LogTemp, Display, TEXT("Gate pos %s"), *Temp.Loc.ToString());
+	// Path.Add(Temp.Loc);
 
-	RMCLandscape->SetPath(Path);
+	// RMCLandscape->SetPath(Path);
 
+	FindPath();
+	RMCLandscape->SetPath(this->Path);
 	UE_LOG(LogTemp, Display, TEXT("PathFinding Done!!!"));
 
     return 0;
@@ -174,9 +176,11 @@ void FPathFinder::FindPath()
 				}
 
 				this->Path.Add( *GateFrom );
+				Gate = *GateFrom;
 			}
 
-			this->Path.Add( this->Begin ); // path is made backwards.
+			Path.Add( this->End );
+			
 			return;
 		}
 
@@ -214,7 +218,7 @@ void FPathFinder::FindPath()
 
 	} // end of while
 
-	UE_LOG(LogTemp, Warning, TEXT(" H level while ended "));
+	UE_LOG(LogTemp, Warning, TEXT(" H level while ended (Not intended) "));
 	return;
 }
 
@@ -257,7 +261,7 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 
 
 		// DEBUGGING@@@@@!!!!!!!
-		Path.Add(Current.Loc);
+		// Path.Add(Current.Loc);
 		// DEBUGGING@@@@@!!!!!!!
 
 		// if frontier met the side of the chunk ( if met destination )

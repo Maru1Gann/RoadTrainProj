@@ -43,6 +43,7 @@ void ARMCLandscape::BeginPlay()
 			true
 		);
 
+		
 	}
 	
 
@@ -257,7 +258,7 @@ void ARMCLandscape::DrawPathDebug()
 	for( int32 i = 0; i < Path.Num(); i++ )
 	{
 		FVector Point = FVector(Path[i].X, Path[i].Y, GenerateHeight(Path[i]) + 100.f );
-		// UE_LOG(LogTemp, Display, TEXT("Path[%d] : %s"), i, *Point.ToString());
+		UE_LOG(LogTemp, Display, TEXT("Path[%d] : %s"), i, *Point.ToString());
 
 		DrawDebugPoint(
 			this->GetWorld(),
