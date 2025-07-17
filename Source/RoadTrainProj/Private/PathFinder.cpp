@@ -11,38 +11,53 @@
 const float INFLOAT = std::numeric_limits<float>::infinity(); // float INF for obstacles
 
 // struct for high level (Chunk level) pathfinding
-struct ChunkNode
+struct FChunkNode
 {
-	explicit ChunkNode() {}
-	explicit ChunkNode(FIntPoint Chunk, FVector2D Loc, float Priority) 
+	explicit FChunkNode() {}
+	explicit FChunkNode(FIntPoint Chunk, FVector2D Loc, float Priority) 
 	: Chunk(Chunk), Loc(Loc), Priority(Priority) {} 
 
 	FIntPoint Chunk;
 	FVector2D Loc;
 	float Priority;
+
+	bool operator==(const FChunkNode& Other) const
+	{
+		return Chunk == Other.Chunk && Loc == Other.Loc;
+	}
+	bool operator!=(const FChunkNode& Other) const
+	{
+		return !( *this == Other );
+	}
 };
-struct ChunkNodePredicate
+FORCEINLINE uint32 GetTypeHash(const FChunkNode& Key)
 {
-	bool operator() (const ChunkNode& A, const ChunkNode& B) const
+	// convert to int. To avoid floating point errors making hash difference
+	FIntPoint LocInt = FIntPoint(FMath::RoundToInt32(Key.Loc.X), FMath::RoundToInt32(Key.Loc.Y));
+	return HashCombineFast( GetTypeHash(Key.Chunk), GetTypeHash(LocInt) );
+}
+struct FChunkNodePredicate
+{
+	bool operator() (const FChunkNode& A, const FChunkNode& B) const
 	{
 		return A.Priority < B.Priority;
 	}
 };
 // declaration of struct for gate pathfinding
-struct Node
+struct FNode
 {
 	// 암시적 형변환 금지. (explicit)
-	explicit Node() {}
-	explicit Node(FVector2D Loc, float Priority) : Loc(Loc), Priority(Priority) {}
+	explicit FNode() {}
+	explicit FNode(FVector2D Loc, float Priority) : Loc(Loc), Priority(Priority) {}
 
 	FVector2D Loc;
 	float Priority;
 
 };
 // declaration of operator for Heap
-struct NodePredicate
+struct FNodePredicate
 {
-	bool operator()(const Node& A, const Node& B) const
+	bool operator()(const FNode& A, const FNode& B) const
 	{
 		// true means B is prioritized.
 		// hence this makes mean heap.
@@ -61,22 +76,10 @@ bool FPathFinder::Init()
 uint32 FPathFinder::Run()
 {
     // work on dedicated thread
-	// FindPath();
-	// RMCLandscape->SetPath(this->Path);
-
-	// TSet<FVector2D> Test = GetDestSide( GetChunk(Begin), GetChunk(End) );
-	// for (auto& Elem : Test)
-	// {
-	// 	UE_LOG(LogTemp, Display, TEXT("Dest : %s"), *Elem.ToString() );
-	// }
-	
-	// Node Temp = GetBestGate( GetChunk(Begin), this->Begin, GetDestSide( GetChunk(Begin), GetChunk(End) ) );
-	// Path.Add(Temp.Loc);
-
-	// RMCLandscape->SetPath(Path);
 
 	FindPath();
-	// GetBestGate( GetChunk(Begin), this->Begin, GetDestSide( GetChunk(Begin), FIntPoint(0,-1) ) );
+	//GetBestGate( GetChunk(Begin), this->Begin, GetDestSide( GetChunk(Begin), GetChunk(End) ) );
+
 	RMCLandscape->SetPath(this->Path);
 	UE_LOG(LogTemp, Display, TEXT("PathFinding Done!!!"));
 
@@ -131,24 +134,31 @@ void FPathFinder::FindPath()
 	UE_LOG(LogTemp, Display, TEXT("BeginChunk : %d, %d"), BeginChunk.X, BeginChunk.Y);
 	UE_LOG(LogTemp, Display, TEXT("EndChunk : %d, %d"), EndChunk.X, EndChunk.Y);
 
-	TArray<ChunkNode> Frontier; // this is mean Heap.
-	Frontier.Heapify( ChunkNodePredicate() );
-	Frontier.HeapPush( ChunkNode( BeginChunk, this->Begin, 0.f), ChunkNodePredicate() );
+	TArray<FChunkNode> Frontier; // this is mean Heap.
+	Frontier.Heapify( FChunkNodePredicate() );
+	Frontier.HeapPush( FChunkNode( BeginChunk, this->Begin, 0.f), FChunkNodePredicate() );
 
 	// this is our map for cost.
 	TMap<FIntPoint, float> CostMap;
 	CostMap.Add( BeginChunk, 0.f );
 
 	// this is our map for path
-	TMap<FVector2D, FVector2D> Came_from;
-	Came_from.Add(this->Begin, this->Begin);
+	TMap<FChunkNode, FChunkNode> Came_from;
+	FChunkNode BeginNode = FChunkNode(BeginChunk, this->Begin, 0.f);
+	Came_from.Add(BeginNode, BeginNode);
 
 	while( !Frontier.IsEmpty() )
 	{
 		UE_LOG(LogTemp, Display, TEXT("HighLevel while"));
 
-		ChunkNode Current;
-		Frontier.HeapPop( Current, ChunkNodePredicate() );
+		FChunkNode Current;
+		Frontier.HeapPop( Current, FChunkNodePredicate() );
+
+		if( Current.Priority >= INFLOAT ) // this means no path. (lowest cost == INF)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("High level hit INF, no path"));
+			return;
+		}
 
 		// check if we've already been here.
 		// if so, we do the iteration only if it's less costly.
@@ -164,39 +174,47 @@ void FPathFinder::FindPath()
 		if( Current.Chunk == EndChunk )
 		{
 			UE_LOG(LogTemp, Display, TEXT("H met goal chunk"));
-
-			// do the value passing
-			this->Path.Add( End );
-			FVector2D Gate = Current.Loc;
-			this->Path.Add( Gate );
 			
-			for(auto& Elem: Came_from)
+			// we need to check if we have path to 'End' from 'Current.Loc'
+			FNode Temp = GetBestGate(Current.Chunk, Current.Loc, TSet<FVector2D>{this->End} );
+			
+			if( Temp.Priority < INFLOAT )
 			{
-				if(Elem.Value == Elem.Key)
-				UE_LOG(LogTemp, Warning, TEXT("Key:%s Value:%s"), *Elem.Value.ToString(), *Elem.Key.ToString());
-			}
+				// do the value passing
+				this->Path.Empty();
 
-			// while( Gate != this->Begin )
-			for( int32 i = 0; i<8; i++ )
-			{
-				
-				FVector2D* GateFrom = Came_from.Find(Gate);
-				if( GateFrom == nullptr ) // error check
+				this->Path.Add( End );
+				FChunkNode Gate = Current;
+				this->Path.Add( Gate.Loc );
+
+				UE_LOG(LogTemp, Display, TEXT("Gate. Chunk:%s Loc:%s "), *Gate.Chunk.ToString(), *Gate.Loc.ToString());
+
+				while( Gate != BeginNode )
 				{
-					UE_LOG(LogTemp, Warning, TEXT(" Came_from nullptr, path error "));
-					break;
+					
+					FChunkNode* GateFrom = Came_from.Find( Gate );
+					if( GateFrom == nullptr ) // error check
+					{
+						UE_LOG(LogTemp, Warning, TEXT(" Came_from nullptr, path error "));
+						break;
+					}
+
+					this->Path.Add( GateFrom->Loc );
+
+					Gate = *GateFrom;
+					UE_LOG(LogTemp, Display, TEXT("Gate. Chunk:%s Loc:%s "), *Gate.Chunk.ToString(), *Gate.Loc.ToString());
 				}
 
-				this->Path.Add( *GateFrom );
+				UE_LOG(LogTemp, Display, TEXT("Data Pass End, PathNum %d"), this->Path.Num());
 
-				Gate = *GateFrom;
-
+				return;
 			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Met goal Chunk, but no path. continuing"));
+			}
+		} // end of 'if we met goal chunk'
 
-			UE_LOG(LogTemp, Display, TEXT("Data Pass End, PathNum %d"), this->Path.Num());
-
-			return;
-		}
 
 		// we didn't meet goal chunk.
 		// 3x3 plane, widen frontier
@@ -206,20 +224,22 @@ void FPathFinder::FindPath()
 			{
 				if( i == 1 && j == 1 ) // when hit self.
 				{
+					//UE_LOG(LogTemp, Display, TEXT("CurrentChunk %s"), *Current.Chunk.ToString());
 					continue;
 				}
 
-				FIntPoint NextChunk = Current.Chunk - FIntPoint(1,1) + FIntPoint( i, j );
+				FIntPoint NextChunk = Current.Chunk - FIntPoint(1,1) + FIntPoint( j, i );
+				//UE_LOG(LogTemp, Display, TEXT("NextChunk %s"), *NextChunk.ToString() );
 
 				// Tmp.priority == 'cost of Loc to Side' ( return of GetBestGate == cost )
-				Node Tmp = GetBestGate( Current.Chunk, Current.Loc, GetDestSide( Current.Chunk, NextChunk) );
-				ChunkNode Next = ChunkNode( NextChunk, Tmp.Loc, INFLOAT );
+				FNode Tmp = GetBestGate( Current.Chunk, Current.Loc, GetDestSide( Current.Chunk, NextChunk) );
+				FChunkNode Next = FChunkNode( NextChunk, Tmp.Loc, INFLOAT );
 
 				float* CostNow = CostMap.Find(Current.Chunk);
-				float NewCost = Tmp.Priority;
+				float NewCost;
 				if( CostNow == nullptr )
 				{
-					UE_LOG(LogTemp, Display, TEXT("HOWTHEFUCK"));
+					UE_LOG(LogTemp, Warning, TEXT("HOWTHEFUCK"));
 				}
 				else
 				{
@@ -230,26 +250,32 @@ void FPathFinder::FindPath()
 				OldCost = CostMap.Find( Next.Chunk );
 				if( OldCost == nullptr || *OldCost > NewCost )
 				{
-					if(Next.Loc == Current.Loc)
+					if(Next == Current)
 					{
-						UE_LOG(LogTemp, Warning, TEXT("WTF, OldCost:%f NewCost:%f"), *OldCost, NewCost );
+						UE_LOG(LogTemp, Warning, TEXT("Same FChunkNode, map error"));
 					}
 					CostMap.Add( Next.Chunk, NewCost );
 
 					//TODO: add slight vector angle priority for diagonal situations. (same point, same priority problem)
-					FVector2D ToGoal = FVector2D( EndChunk.X, EndChunk.Y ) - FVector2D( Current.Chunk.X, Current.Chunk.Y );
-					FVector2D ToNext = FVector2D( Next.Chunk.X, Next.Chunk.Y ) - FVector2D(Current.Chunk.X, Current.Chunk.Y);
+					FVector2D ToGoal = FVector2D( End.X, End.Y ) - FVector2D( Next.Loc.X, Next.Loc.Y );
+					FVector2D ToNext = FVector2D(NextChunk.X, NextChunk.Y ) - FVector2D( Current.Chunk.X, Current.Chunk.Y );
 					ToGoal.Normalize();
 					ToNext.Normalize();
 
 					float DotResult = FVector2D::DotProduct(ToGoal, ToNext);
-					// Result is close to 0 if angle is small. -1 ~ 0 ~ 1
-					
-					Next.Priority = NewCost + Heuristic(Next.Loc) + FMath::Abs(DotResult);
+					// Result is close to 1 if angle is small. -1 ~ 0 ~ 1
+					// 같은 방향 -> 1 에 가까움. 반대 방향 -> -1. 수직 방향 -> 0
 
+					Next.Priority = NewCost + Heuristic(Next.Loc) - DotResult;
 
-					Came_from.Add( Next.Loc, Current.Loc );
-					Frontier.HeapPush( Next, ChunkNodePredicate() );
+					UE_LOG(LogTemp, Display, TEXT("NewCost %f"), NewCost);
+					UE_LOG(LogTemp, Display, TEXT("Heuristic %f"), Heuristic(Next.Loc) );
+					UE_LOG(LogTemp, Display, TEXT("NewCost + Heuristic %f"), NewCost+Heuristic(Next.Loc));
+					UE_LOG(LogTemp, Display, TEXT("NewCost + Heuristic(Next.Loc) - DotResult*1000:	%f"), Next.Priority );
+
+					Came_from.Add( Next, Current ); // Next 'came from' Current
+					Frontier.HeapPush( Next, FChunkNodePredicate() );
+					UE_LOG(LogTemp, Display, TEXT("Pushing next FChunkNode : %s, %s, %f"), *Next.Chunk.ToString(), *Next.Loc.ToString(), Next.Priority);
 				}
 
 			}
@@ -264,18 +290,19 @@ void FPathFinder::FindPath()
 // Let's find path to one side
 // and then return the first met gate (this will be our 'gate')
 // Chunk == current chunk we traverse.
-// will return Start if cannot traverse.
-Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, const TSet<FVector2D>& ChunkSide)
+// will return INFLOAT cost if cannot traverse.
+// this function returns 'cost' in FNode::Priority
+FNode FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, const TSet<FVector2D>& ChunkSide)
 {
 	if( ChunkSide.IsEmpty() )
 	{
 		UE_LOG(LogTemp, Warning, TEXT(" ChunkSide Empty "));
-		return Node();
+		return FNode();
 	}
 	// we do A*
-	TArray<Node> Frontier; // this is mean Heap
-	Frontier.Heapify( NodePredicate() );
-	Frontier.HeapPush( Node( Start, 0.f ), NodePredicate() );
+	TArray<FNode> Frontier; // this is mean Heap
+	Frontier.Heapify( FNodePredicate() );
+	Frontier.HeapPush( FNode( Start, 0.f ), FNodePredicate() );
 	
 	TMap<FVector2D, float> CostMap;
 	CostMap.Add( Start, 0.f );
@@ -283,14 +310,24 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 	// we don't actually need the path.
 	// we just need to figure out best gate.
 
-	Node Current;
+	FNode Current;
 
 	while( !Frontier.IsEmpty() )
 	{
 
-		//Node Current;
-		Frontier.HeapPop( Current, NodePredicate() ); // out param
+		//FNode Current;
+		Frontier.HeapPop( Current, FNodePredicate() ); // out param
 		FVector CurrentLoc3D = ConvertTo3D(Current.Loc);
+
+		// debugging------------------------------------------------------------
+		//Path.Add(Current.Loc);
+		// debugging------------------------------------------------------------
+		
+		if( Current.Priority >= INFLOAT ) // if popped node == INFLOAT, it means everything else are INFLOAT
+		{
+			UE_LOG(LogTemp, Display, TEXT("hit INFLOAT, no path found"));
+			return Current;
+		}
 
 		// check if we've already been here.
 		// if so, we do the iteration only if it's less costly.
@@ -300,11 +337,6 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 			continue;
 		}
 
-
-		// DEBUGGING@@@@@!!!!!!!
-		// Path.Add(Current.Loc);
-		// DEBUGGING@@@@@!!!!!!!
-
 		// if frontier met the side of the chunk ( if met destination )
 		if( ChunkSide.Contains( Current.Loc ) ) 
 		{
@@ -313,12 +345,12 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 			if( FMath::IsFinite(*FinalCost) )
 			{
 				// put 'cost' in 'priority' for return
-				return Node(Current.Loc, *FinalCost);
+				return FNode(Current.Loc, *FinalCost);
 			}
 			else // return Cost == INF ( no route )
 			{
 				UE_LOG(LogTemp, Warning, TEXT("LowLevel A* Failed"));
-				return Node(Current.Loc, INFLOAT);
+				return FNode(Current.Loc, INFLOAT);
 			}
 		}
 
@@ -344,7 +376,7 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 				}
 
 				float StepX = j * VertexSpacing;
-				Node Neighbor;
+				FNode Neighbor;
 				Neighbor.Loc = FVector2D( Loc.X + StepX, Loc.Y + StepY );
 
 				// check if out of Chunk Boundary
@@ -362,11 +394,7 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 				{
 					NewCost = GetDistSquared( CurrentLoc3D, NeighborLoc3D );
 				}
-				// else
-				// {
-				// 	UE_LOG(LogTemp, Warning, TEXT("Slope hit : %f < %f"), SlopeSquared, SlopeCheck );
-				// }
-				
+
 				// check if it's new or less costly. (replaceable)
 				OldCost = CostMap.Find( Neighbor.Loc );
 				if( OldCost == nullptr || *OldCost > NewCost )
@@ -375,7 +403,7 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 					CostMap.Add( Neighbor.Loc, NewCost );
 
 					Neighbor.Priority = NewCost + Heuristic( NeighborLoc3D );
-					Frontier.HeapPush( Neighbor, NodePredicate() );
+					Frontier.HeapPush( Neighbor, FNodePredicate() );
 				}
 
 			}
@@ -384,7 +412,7 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 	} // end of while
 
 	UE_LOG(LogTemp, Warning, TEXT("LowLevel while done (Not intended)"));
-	return Node(Current.Loc, INFLOAT);
+	return FNode(Current.Loc, INFLOAT);
 }
 
 
@@ -449,7 +477,7 @@ FIntPoint FPathFinder::GetChunk(const FVector2D& Location)
 
 float FPathFinder::Heuristic(const FVector2D& Current)
 {
-	return GetDistSquared(Current, this->End);
+	return Heuristic( ConvertTo3D(Current)) ;
 }
 float FPathFinder::Heuristic(const FVector& Current)
 {

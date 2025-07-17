@@ -33,7 +33,7 @@ private:
 
 	void FindPath();
 	// forward declaration of 'Node'
-	struct Node GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, const TSet<FVector2D>& ChunkSide);
+	struct FNode GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, const TSet<FVector2D>& ChunkSide);
 
 	// tools
 	float GetHeight(const FVector2D& Location);
