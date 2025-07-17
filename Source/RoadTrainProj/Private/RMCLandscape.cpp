@@ -243,7 +243,7 @@ void ARMCLandscape::SetPath(const TArray<FVector2D>& ReversePath)
 {
 	int32 LastIndex = ReversePath.Num() - 1;
 	this->Path.Empty();
-	this->Path.SetNum( LastIndex + 1);
+	this->Path.SetNum( LastIndex + 1 );
 	for( int32 i = 0; i <= LastIndex; i++ )
 	{
 		Path[i] = ReversePath[LastIndex - i];
@@ -258,7 +258,7 @@ void ARMCLandscape::DrawPathDebug()
 	for( int32 i = 0; i < Path.Num(); i++ )
 	{
 		FVector Point = FVector(Path[i].X, Path[i].Y, GenerateHeight(Path[i]) + 100.f );
-		UE_LOG(LogTemp, Display, TEXT("Path[%d] : %s"), i, *Point.ToString());
+		// UE_LOG(LogTemp, Display, TEXT("Path[%d] : %s"), i, *Point.ToString());
 
 		DrawDebugPoint(
 			this->GetWorld(),
@@ -614,6 +614,10 @@ FIntPoint ARMCLandscape::GetChunk(const FVector2D& Location)
 
 float ARMCLandscape::GenerateHeight(const FVector2D& Location)
 {
+	if( ShouldGenerateHeight == false )
+	{
+		return 0.0f;
+	}
 	float height = 0.0f;
 
 	if(PerlinNoiseLayers.Num() <= 0)

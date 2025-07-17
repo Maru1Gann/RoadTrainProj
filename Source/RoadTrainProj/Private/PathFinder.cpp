@@ -71,12 +71,12 @@ uint32 FPathFinder::Run()
 	// }
 	
 	// Node Temp = GetBestGate( GetChunk(Begin), this->Begin, GetDestSide( GetChunk(Begin), GetChunk(End) ) );
-	// UE_LOG(LogTemp, Display, TEXT("Gate pos %s"), *Temp.Loc.ToString());
 	// Path.Add(Temp.Loc);
 
 	// RMCLandscape->SetPath(Path);
 
 	FindPath();
+	// GetBestGate( GetChunk(Begin), this->Begin, GetDestSide( GetChunk(Begin), FIntPoint(0,-1) ) );
 	RMCLandscape->SetPath(this->Path);
 	UE_LOG(LogTemp, Display, TEXT("PathFinding Done!!!"));
 
@@ -110,6 +110,7 @@ FPathFinder::FPathFinder( ARMCLandscape* RMCLandscape, const FVector2D& Begin, c
 	this->VertexSpacing = RMCLandscape->VertexSpacing;
 	this->VerticesPerChunk = RMCLandscape->VerticesPerChunk;
 	this->NoiseLayers = RMCLandscape->PerlinNoiseLayers;
+	this->ShouldGenerateHeight = RMCLandscape->ShouldGenerateHeight;
 
 	End3D = ConvertTo3D(End);
 	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
@@ -122,16 +123,17 @@ void FPathFinder::FindPath()
 	// from this->Begin to this->End
 	// Begin - Gates - ... - Gates - End
 	// we'll store this in TArray<FVector2D> Path (member var)
-	this->Path.Empty();
+	//this->Path.Empty();
 
 	FIntPoint BeginChunk = GetChunk(this->Begin);
 	FIntPoint EndChunk = GetChunk(this->End);
+
 	UE_LOG(LogTemp, Display, TEXT("BeginChunk : %d, %d"), BeginChunk.X, BeginChunk.Y);
 	UE_LOG(LogTemp, Display, TEXT("EndChunk : %d, %d"), EndChunk.X, EndChunk.Y);
 
 	TArray<ChunkNode> Frontier; // this is mean Heap.
 	Frontier.Heapify( ChunkNodePredicate() );
-	Frontier.HeapPush( ChunkNode( BeginChunk, Begin, 0.f), ChunkNodePredicate() );
+	Frontier.HeapPush( ChunkNode( BeginChunk, this->Begin, 0.f), ChunkNodePredicate() );
 
 	// this is our map for cost.
 	TMap<FIntPoint, float> CostMap;
@@ -139,6 +141,7 @@ void FPathFinder::FindPath()
 
 	// this is our map for path
 	TMap<FVector2D, FVector2D> Came_from;
+	Came_from.Add(this->Begin, this->Begin);
 
 	while( !Frontier.IsEmpty() )
 	{
@@ -163,24 +166,35 @@ void FPathFinder::FindPath()
 			UE_LOG(LogTemp, Display, TEXT("H met goal chunk"));
 
 			// do the value passing
+			this->Path.Add( End );
 			FVector2D Gate = Current.Loc;
 			this->Path.Add( Gate );
 			
-			while( Gate != this->Begin )
+			for(auto& Elem: Came_from)
 			{
-				FVector2D* GateFrom = Came_from.Find(Gate);
+				if(Elem.Value == Elem.Key)
+				UE_LOG(LogTemp, Warning, TEXT("Key:%s Value:%s"), *Elem.Value.ToString(), *Elem.Key.ToString());
+			}
+
+			// while( Gate != this->Begin )
+			for( int32 i = 0; i<8; i++ )
+			{
 				
+				FVector2D* GateFrom = Came_from.Find(Gate);
 				if( GateFrom == nullptr ) // error check
 				{
 					UE_LOG(LogTemp, Warning, TEXT(" Came_from nullptr, path error "));
+					break;
 				}
 
 				this->Path.Add( *GateFrom );
+
 				Gate = *GateFrom;
+
 			}
 
-			Path.Add( this->End );
-			
+			UE_LOG(LogTemp, Display, TEXT("Data Pass End, PathNum %d"), this->Path.Num());
+
 			return;
 		}
 
@@ -190,24 +204,49 @@ void FPathFinder::FindPath()
 		{
 			for (int32 j = 0; j<3; j++ )
 			{
-				if( i == 1 && j == 1) // when hit self.
+				if( i == 1 && j == 1 ) // when hit self.
 				{
 					continue;
 				}
 
 				FIntPoint NextChunk = Current.Chunk - FIntPoint(1,1) + FIntPoint( i, j );
-				UE_LOG(LogTemp, Display, TEXT(" NextChunk %s"), *NextChunk.ToString());
 
-				// Tmp.priority == 'cost' ( for return of GetBestGate )
+				// Tmp.priority == 'cost of Loc to Side' ( return of GetBestGate == cost )
 				Node Tmp = GetBestGate( Current.Chunk, Current.Loc, GetDestSide( Current.Chunk, NextChunk) );
 				ChunkNode Next = ChunkNode( NextChunk, Tmp.Loc, INFLOAT );
 
+				float* CostNow = CostMap.Find(Current.Chunk);
+				float NewCost = Tmp.Priority;
+				if( CostNow == nullptr )
+				{
+					UE_LOG(LogTemp, Display, TEXT("HOWTHEFUCK"));
+				}
+				else
+				{
+					NewCost = Tmp.Priority + *CostNow;
+				}
+
 				// add only if we haven't been to NextChunk, or it's less costly.
 				OldCost = CostMap.Find( Next.Chunk );
-				if( OldCost == nullptr || *OldCost > Tmp.Priority )
+				if( OldCost == nullptr || *OldCost > NewCost )
 				{
-					CostMap.Add( Next.Chunk, Tmp.Priority );
-					Next.Priority = Tmp.Priority + Heuristic(Next.Loc);
+					if(Next.Loc == Current.Loc)
+					{
+						UE_LOG(LogTemp, Warning, TEXT("WTF, OldCost:%f NewCost:%f"), *OldCost, NewCost );
+					}
+					CostMap.Add( Next.Chunk, NewCost );
+
+					//TODO: add slight vector angle priority for diagonal situations. (same point, same priority problem)
+					FVector2D ToGoal = FVector2D( EndChunk.X, EndChunk.Y ) - FVector2D( Current.Chunk.X, Current.Chunk.Y );
+					FVector2D ToNext = FVector2D( Next.Chunk.X, Next.Chunk.Y ) - FVector2D(Current.Chunk.X, Current.Chunk.Y);
+					ToGoal.Normalize();
+					ToNext.Normalize();
+
+					float DotResult = FVector2D::DotProduct(ToGoal, ToNext);
+					// Result is close to 0 if angle is small. -1 ~ 0 ~ 1
+					
+					Next.Priority = NewCost + Heuristic(Next.Loc) + FMath::Abs(DotResult);
+
 
 					Came_from.Add( Next.Loc, Current.Loc );
 					Frontier.HeapPush( Next, ChunkNodePredicate() );
@@ -244,10 +283,12 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 	// we don't actually need the path.
 	// we just need to figure out best gate.
 
+	Node Current;
+
 	while( !Frontier.IsEmpty() )
 	{
 
-		Node Current;
+		//Node Current;
 		Frontier.HeapPop( Current, NodePredicate() ); // out param
 		FVector CurrentLoc3D = ConvertTo3D(Current.Loc);
 
@@ -274,10 +315,10 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 				// put 'cost' in 'priority' for return
 				return Node(Current.Loc, *FinalCost);
 			}
-			else // return Start since Cost == INF ( no route )
+			else // return Cost == INF ( no route )
 			{
 				UE_LOG(LogTemp, Warning, TEXT("LowLevel A* Failed"));
-				return Node(Start, INFLOAT);
+				return Node(Current.Loc, INFLOAT);
 			}
 		}
 
@@ -342,7 +383,8 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 
 	} // end of while
 
-	return Node(Start, INFLOAT);
+	UE_LOG(LogTemp, Warning, TEXT("LowLevel while done (Not intended)"));
+	return Node(Current.Loc, INFLOAT);
 }
 
 
@@ -350,7 +392,11 @@ Node FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, co
 
 float FPathFinder::GetHeight(const FVector2D& Location)
 {
-    	float height = 0.0f;
+	if( ShouldGenerateHeight == false )
+	{
+		return 0.0f;
+	}
+    float height = 0.0f;
 
 	if(NoiseLayers.Num() <= 0)
 	{

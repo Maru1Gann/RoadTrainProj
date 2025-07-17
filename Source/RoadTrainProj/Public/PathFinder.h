@@ -22,6 +22,7 @@ private:
 	FVector2D End;
 	FVector End3D;
 	float SlopeSquared;
+	bool ShouldGenerateHeight;
 
 	float VertexSpacing;
 	int32 VerticesPerChunk;
