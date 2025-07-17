@@ -270,8 +270,9 @@ void FPathFinder::FindPath()
 
 					UE_LOG(LogTemp, Display, TEXT("NewCost %f"), NewCost);
 					UE_LOG(LogTemp, Display, TEXT("Heuristic %f"), Heuristic(Next.Loc) );
+					UE_LOG(LogTemp, Display, TEXT("DotResult %f"), DotResult);
 					UE_LOG(LogTemp, Display, TEXT("NewCost + Heuristic %f"), NewCost+Heuristic(Next.Loc));
-					UE_LOG(LogTemp, Display, TEXT("NewCost + Heuristic(Next.Loc) - DotResult*1000:	%f"), Next.Priority );
+					UE_LOG(LogTemp, Display, TEXT("NewCost + Heuristic(Next.Loc) - DotResult:%f"), Next.Priority );
 
 					Came_from.Add( Next, Current ); // Next 'came from' Current
 					Frontier.HeapPush( Next, FChunkNodePredicate() );
@@ -456,11 +457,12 @@ float FPathFinder::GetHeight(const FVector& Location)
 
 float FPathFinder::GetDistSquared(const FVector& Start, const FVector& Dest)
 {
-	return FVector::DistSquared( Start , Dest );
+	return FVector::DistSquared( Start , Dest ) / ( VertexSpacing * VertexSpacing );
+	// divide with vertexSpacing^2 since value too big.
 }
 float FPathFinder::GetDistSquared(const FVector2D& Start, const FVector2D& Dest)
 {
-	return FVector::DistSquared( ConvertTo3D(Start) , ConvertTo3D(Dest) );
+	return GetDistSquared(ConvertTo3D(Start), ConvertTo3D(Dest));
 }
 
 FVector FPathFinder::ConvertTo3D(const FVector2D& Vector2D)
@@ -477,7 +479,7 @@ FIntPoint FPathFinder::GetChunk(const FVector2D& Location)
 
 float FPathFinder::Heuristic(const FVector2D& Current)
 {
-	return Heuristic( ConvertTo3D(Current)) ;
+	return Heuristic( ConvertTo3D(Current) ) ;
 }
 float FPathFinder::Heuristic(const FVector& Current)
 {
