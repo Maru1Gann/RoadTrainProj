@@ -26,6 +26,7 @@ void ARMCLandscape::BeginPlay()
 	if( DoPathFinding )
 	{
 		PathFinder = new FPathFinder(this, StartPos, EndPos, Slope );
+		// PathFinder::Run() goes off
 		
 		DrawDebugPoint(
 			this->GetWorld(),
@@ -43,12 +44,12 @@ void ARMCLandscape::BeginPlay()
 			true
 		);
 
-		
 	}
 	
 
 	// RMC Chunk Generation ↓
 	GenerateChunkOrder();
+
 
 	// TODO : Move all these to Control class later
 	FTimerHandle LandscapeTimer;
@@ -239,16 +240,21 @@ void ARMCLandscape::RemoveLandscape()
 }
 
 
-void ARMCLandscape::SetPath(const TArray<FVector2D>& ReversePath)
+void ARMCLandscape::SetPath(const TArray<TPair<FIntPoint ,FVector2D> >& ReversePath)
 {
 	int32 LastIndex = ReversePath.Num() - 1;
 	this->Path.Empty();
 	this->Path.SetNum( LastIndex + 1 );
+	this->PathByChunk.Empty();
 	for( int32 i = 0; i <= LastIndex; i++ )
 	{
 		Path[i] = ReversePath[LastIndex - i];
+
+		// we plot TMultiMap for later indexing
+		PathByChunk.Emplace( Path[i].Key , i );
 	}
 
+	this->IsPathFound = true;
 	return;
 }
 void ARMCLandscape::DrawPathDebug()
@@ -257,7 +263,7 @@ void ARMCLandscape::DrawPathDebug()
 
 	for( int32 i = 0; i < Path.Num(); i++ )
 	{
-		FVector Point = FVector(Path[i].X, Path[i].Y, GenerateHeight(Path[i]) + 100.f );
+		FVector Point = FVector(Path[i].Value.X, Path[i].Value.Y, GenerateHeight(Path[i].Value) + 100.f );
 		// UE_LOG(LogTemp, Display, TEXT("Path[%d] : %s"), i, *Point.ToString());
 
 		DrawDebugPoint(
@@ -586,7 +592,17 @@ void ARMCLandscape::GenerateChunkOrder()
 	return;
 }
 
+void ARMCLandscape::FindPath(const FIntPoint& Chunk, const int32& Index)
+{
+	// 메모 (실제 도로 생성시)
+	// 한 청크 내에서 이전 path 와 연속적인 경우 동일 spline으로 처리하면 됌.
+	// 멀리서 우회해서 들어온 path 라서 연속적이지 않은 경우 새로 spline을 생성해줘야함.
+	// 쉽지않네.
 
+	// First, let's just do pathfinding in this function. ( A* )
+	// do only one point to another pathfinding in specific chunk.
+	
+}
 
 /* Tools */
 
@@ -678,6 +694,7 @@ void FStreamSetGenerator::DoWork()
 {
 	if(RMC == nullptr)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("StreamSetGenerator::DoWork RMC nullptr"));
 		return;
 	}
 	
@@ -706,6 +723,7 @@ void FStreamSetGenerator::DoWork()
 		}
 	}
 
+	// check if any chunk is out of radius. if found break.
 	int32 Extent = RMC->ChunkRadius;
 	FIntPoint Center = CurrentChunk;
 	for ( auto &Elem : RMC->Chunks )

@@ -183,11 +183,11 @@ void FPathFinder::FindPath()
 				// do the value passing
 				this->Path.Empty();
 
-				this->Path.Add( End );
+				this->Path.Emplace( EndChunk, End );
 				FChunkNode Gate = Current;
-				this->Path.Add( Gate.Loc );
+				this->Path.Emplace( Gate.Chunk, Gate.Loc );
 
-				UE_LOG(LogTemp, Display, TEXT("Gate. Chunk:%s Loc:%s "), *Gate.Chunk.ToString(), *Gate.Loc.ToString());
+				// UE_LOG(LogTemp, Display, TEXT("Gate. Chunk:%s Loc:%s "), *Gate.Chunk.ToString(), *Gate.Loc.ToString());
 
 				while( Gate != BeginNode )
 				{
@@ -199,10 +199,10 @@ void FPathFinder::FindPath()
 						break;
 					}
 
-					this->Path.Add( GateFrom->Loc );
+					this->Path.Emplace( GateFrom->Chunk , GateFrom->Loc );
 
 					Gate = *GateFrom;
-					UE_LOG(LogTemp, Display, TEXT("Gate. Chunk:%s Loc:%s "), *Gate.Chunk.ToString(), *Gate.Loc.ToString());
+					//UE_LOG(LogTemp, Display, TEXT("Gate. Chunk:%s Loc:%s "), *Gate.Chunk.ToString(), *Gate.Loc.ToString());
 				}
 
 				UE_LOG(LogTemp, Display, TEXT("Data Pass End, PathNum %d"), this->Path.Num());
@@ -236,7 +236,7 @@ void FPathFinder::FindPath()
 				FChunkNode Next = FChunkNode( NextChunk, Tmp.Loc, INFLOAT );
 
 				float* CostNow = CostMap.Find(Current.Chunk);
-				float NewCost;
+				float NewCost = INFLOAT;
 				if( CostNow == nullptr )
 				{
 					UE_LOG(LogTemp, Warning, TEXT("HOWTHEFUCK"));
@@ -268,15 +268,16 @@ void FPathFinder::FindPath()
 
 					Next.Priority = NewCost + Heuristic(Next.Loc) - DotResult;
 
-					UE_LOG(LogTemp, Display, TEXT("NewCost %f"), NewCost);
-					UE_LOG(LogTemp, Display, TEXT("Heuristic %f"), Heuristic(Next.Loc) );
-					UE_LOG(LogTemp, Display, TEXT("DotResult %f"), DotResult);
-					UE_LOG(LogTemp, Display, TEXT("NewCost + Heuristic %f"), NewCost+Heuristic(Next.Loc));
-					UE_LOG(LogTemp, Display, TEXT("NewCost + Heuristic(Next.Loc) - DotResult:%f"), Next.Priority );
+					// UE_LOG(LogTemp, Display, TEXT("NewCost %f"), NewCost);
+					// UE_LOG(LogTemp, Display, TEXT("Heuristic %f"), Heuristic(Next.Loc) );
+					// UE_LOG(LogTemp, Display, TEXT("DotResult %f"), DotResult);
+					// UE_LOG(LogTemp, Display, TEXT("NewCost + Heuristic %f"), NewCost+Heuristic(Next.Loc));
+					// UE_LOG(LogTemp, Display, TEXT("NewCost + Heuristic(Next.Loc) - DotResult:%f"), Next.Priority );
 
 					Came_from.Add( Next, Current ); // Next 'came from' Current
 					Frontier.HeapPush( Next, FChunkNodePredicate() );
-					UE_LOG(LogTemp, Display, TEXT("Pushing next FChunkNode : %s, %s, %f"), *Next.Chunk.ToString(), *Next.Loc.ToString(), Next.Priority);
+					
+					// UE_LOG(LogTemp, Display, TEXT("Pushing next FChunkNode : %s, %s, %f"), *Next.Chunk.ToString(), *Next.Loc.ToString(), Next.Priority);
 				}
 
 			}
@@ -326,7 +327,7 @@ FNode FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, c
 		
 		if( Current.Priority >= INFLOAT ) // if popped node == INFLOAT, it means everything else are INFLOAT
 		{
-			UE_LOG(LogTemp, Display, TEXT("hit INFLOAT, no path found"));
+			UE_LOG(LogTemp, Display, TEXT("hit INFLOAT, no path found.") );
 			return Current;
 		}
 

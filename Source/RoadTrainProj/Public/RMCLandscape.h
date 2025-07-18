@@ -77,7 +77,7 @@ public:
 
 
 	// PathFinding stuffs
-	void SetPath(const TArray<FVector2D>& ReversePath);
+	void SetPath(const TArray<TPair<FIntPoint ,FVector2D> >& ReversePath);
 	void DrawPathDebug();
 
 
@@ -95,12 +95,25 @@ private:
 	// Chunk Generation Order
 	TArray<FIntPoint> ChunkOrder;
 
+	// streamset async generator
+	FAsyncTask<FStreamSetGenerator>* StreamSetGenerator;
+
+	// pathfinding stuffs.
+	class FPathFinder* PathFinder;
+	bool IsPathFound = false; // check SetPath();
+
+	TArray<TPair<FIntPoint ,FVector2D> > Path;
+	TMultiMap< FIntPoint, int32 > PathByChunk;
+
 	void AddChunk(const FIntPoint& ChunkCoord, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
 
 	void GenerateStreamSet(const FIntPoint& ChunkCoord, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
 
 	void GenerateChunkOrder();
 
+	void FindPath(const FIntPoint& Chunk, const int32& Index);
+
+	// async work flags
 	bool IsDataReady = false;
 	bool IsWorking = false;
 	FIntPoint PlayerChunk = FIntPoint(0,0);
@@ -127,6 +140,8 @@ private:
 	UPROPERTY( VisibleAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 7))
 	FIntPoint EndChunk;
 
+	// ----------------tools-------------------
+
 	// Get ChunkCoord of Player
 	FIntPoint GetPlayerLocatedChunk();
 	FIntPoint GetChunk(const FVector2D& Location);
@@ -141,11 +156,6 @@ private:
 
 	FVector2D SnapToGrid(const FVector2D& Location);
 
-	FAsyncTask<FStreamSetGenerator>* StreamSetGenerator;
-	class FPathFinder* PathFinder;
-
-
-	TArray<FVector2D> Path;
 };
 
 

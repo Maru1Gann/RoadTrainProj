@@ -6,6 +6,8 @@
 
 class FPathFinder : public FRunnable
 {
+	friend class ARMCLandscape;
+
 public:
 	FPathFinder(class ARMCLandscape* RMCLandscape, const FVector2D& Begin, const FVector2D& End, const float& Slope);
 
@@ -29,7 +31,7 @@ private:
 	float ChunkLength;
 	TArray<struct FPerlinNoiseVariables> NoiseLayers;
 
-	TArray<FVector2D> Path;
+	TArray< TPair<FIntPoint, FVector2D> > Path;
 
 	void FindPath();
 	// forward declaration of 'Node'
