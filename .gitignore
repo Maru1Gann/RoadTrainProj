@@ -80,3 +80,10 @@ Content/Static/*
 
 # (Added by Maru) Ignore .vscode Folder
 .vscode/*
+
+# workspace ignore
+*.code-workspace
+RoadTrainProj.code-workspace
+
+# plugin file ignore
+Plugins/*
