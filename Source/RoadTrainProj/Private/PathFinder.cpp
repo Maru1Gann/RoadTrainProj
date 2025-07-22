@@ -59,8 +59,7 @@ struct FNodePredicate
 {
 	bool operator()(const FNode& A, const FNode& B) const
 	{
-		// true means B is prioritized.
-		// hence this makes mean heap.
+		// this makes min heap.
 		return A.Priority < B.Priority;
 	}
 };
@@ -83,6 +82,7 @@ uint32 FPathFinder::Run()
 	RMCLandscape->SetPath(this->Path);
 	UE_LOG(LogTemp, Display, TEXT("PathFinding Done!!!"));
 
+
     return 0;
 }
 
@@ -93,10 +93,9 @@ void FPathFinder::Exit()
 	AsyncTask(ENamedThreads::GameThread, 
 		[this]()
 		{
-			this->RMCLandscape->DrawPathDebug();
-		}
+			this->RMCLandscape->RunAfterPathFinding();
+		} 
 	);
-
 }
 
 void FPathFinder::Stop()
@@ -258,7 +257,7 @@ void FPathFinder::FindPath()
 
 					//TODO: add slight vector angle priority for diagonal situations. (same point, same priority problem)
 					FVector2D ToGoal = FVector2D( End.X, End.Y ) - FVector2D( Next.Loc.X, Next.Loc.Y );
-					FVector2D ToNext = FVector2D(NextChunk.X, NextChunk.Y ) - FVector2D( Current.Chunk.X, Current.Chunk.Y );
+					FVector2D ToNext = FVector2D( NextChunk.X, NextChunk.Y ) - FVector2D( Current.Chunk.X, Current.Chunk.Y );
 					ToGoal.Normalize();
 					ToNext.Normalize();
 
@@ -396,6 +395,8 @@ FNode FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, c
 				{
 					NewCost = GetDistSquared( CurrentLoc3D, NeighborLoc3D );
 				}
+				float CostNow = Current.Priority - Heuristic( CurrentLoc3D );
+				NewCost += CostNow;
 
 				// check if it's new or less costly. (replaceable)
 				OldCost = CostMap.Find( Neighbor.Loc );
@@ -416,7 +417,6 @@ FNode FPathFinder::GetBestGate(const FIntPoint& Chunk, const FVector2D& Start, c
 	UE_LOG(LogTemp, Warning, TEXT("LowLevel while done (Not intended)"));
 	return FNode(Current.Loc, INFLOAT);
 }
-
 
 // tools
 
@@ -456,6 +456,7 @@ float FPathFinder::GetHeight(const FVector& Location)
 	return GetHeight(FVector2D(Location.X, Location.Y));
 }
 
+// returns unit distance value.
 float FPathFinder::GetDistSquared(const FVector& Start, const FVector& Dest)
 {
 	return FVector::DistSquared( Start , Dest ) / ( VertexSpacing * VertexSpacing );

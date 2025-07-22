@@ -60,7 +60,7 @@ public:
 	UMaterialInterface* ChunkMaterial;
 
 	UPROPERTY( EditAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 0) )
-	bool DoPathFinding = false;
+	bool bDoPathFinding = false;
 	UPROPERTY( EditAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 1) )
 	FVector2D Start = FVector2D( 1000.f, 1000.f );
 	UPROPERTY( EditAnywhere, Category = "Chunks|PathFinding", meta = (DisplayPriority = 2) )
@@ -78,7 +78,9 @@ public:
 
 	// PathFinding stuffs
 	void SetPath(const TArray<TPair<FIntPoint ,FVector2D> >& ReversePath);
-	void DrawPathDebug();
+	void DrawPathDebug(const TArray<FVector2D>& DrawPath);
+	
+	void RunAfterPathFinding();
 
 
 	// -------------------Chunk Generation (RMC) ----------------------
@@ -90,6 +92,7 @@ protected:
 
 
 private:
+
 	// Store all the chunks HERE
 	TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
 	// Chunk Generation Order
@@ -102,7 +105,7 @@ private:
 	class FPathFinder* PathFinder;
 	bool IsPathFound = false; // check SetPath();
 
-	TArray<TPair<FIntPoint ,FVector2D> > Path;
+	TArray<TPair<FIntPoint ,FVector2D> > Path; // FIntPoint == the Chunk the node belongs. FVector2D == coord of the node.
 	TMultiMap< FIntPoint, int32 > PathByChunk;
 
 	void AddChunk(const FIntPoint& ChunkCoord, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
@@ -111,7 +114,7 @@ private:
 
 	void GenerateChunkOrder();
 
-	void FindPath(const FIntPoint& Chunk, const int32& Index);
+	void FindPath(const FIntPoint& Chunk, const int32& Index, TArray<FVector2D>& OutPath);
 
 	// async work flags
 	bool IsDataReady = false;
@@ -121,6 +124,8 @@ private:
 	TPair<FIntPoint, bool> RemovableChunk;
 	TPair<FIntPoint, bool> NeededChunk;
 	RealtimeMesh::FRealtimeMeshStreamSet MemberStreamSet;
+
+	TArray< FVector2D > ChunkPath;
 
 	// for debugging purposes
 	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 5) )

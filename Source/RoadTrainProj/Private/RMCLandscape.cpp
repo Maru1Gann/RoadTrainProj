@@ -8,6 +8,9 @@
 
 #include "DrawDebugHelpers.h"
 
+#include <limits>
+const float INFLOAT = std::numeric_limits<float>::infinity(); // float INF for obstacles
+
 // Sets default values
 ARMCLandscape::ARMCLandscape()
 {
@@ -23,8 +26,9 @@ void ARMCLandscape::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if( DoPathFinding )
+	if( bDoPathFinding )
 	{
+		UE_LOG(LogTemp, Display, TEXT("PathFinding Start"));
 		PathFinder = new FPathFinder(this, StartPos, EndPos, Slope );
 		// PathFinder::Run() goes off
 		
@@ -43,13 +47,45 @@ void ARMCLandscape::BeginPlay()
 			FColor::Blue,
 			true
 		);
-
 	}
-	
 
-	// RMC Chunk Generation ↓
+	// // RMC Chunk Generation ↓
+	// GenerateChunkOrder();
+
+	// // TODO : Move all these to Control class later
+	// FTimerHandle LandscapeTimer;
+	// if( bUseAsync )
+	// {
+	// 	StreamSetGenerator = new FAsyncTask<FStreamSetGenerator>(this);
+
+	// 	GetWorldTimerManager().SetTimer(
+	// 		LandscapeTimer,
+	// 		this,
+	// 		&ARMCLandscape::AsyncGenerateLandscape,
+	// 		UpdatePeriod,
+	// 		true,
+	// 		0.001f
+	// 	);
+	// }
+	// else
+	// {
+	// 	GetWorldTimerManager().SetTimer(
+	// 		LandscapeTimer,
+	// 		this,
+	// 		&ARMCLandscape::GenerateLandscape,
+	// 		UpdatePeriod,
+	// 		true,
+	// 		0.001f
+	// 	);
+	// }
+
+	return;
+}
+
+void ARMCLandscape::RunAfterPathFinding()
+{
+		// RMC Chunk Generation ↓
 	GenerateChunkOrder();
-
 
 	// TODO : Move all these to Control class later
 	FTimerHandle LandscapeTimer;
@@ -78,8 +114,8 @@ void ARMCLandscape::BeginPlay()
 		);
 	}
 
-	return;
 }
+
 
 void ARMCLandscape::OnConstruction(const FTransform &Transform)
 {
@@ -127,6 +163,8 @@ void ARMCLandscape::AsyncGenerateLandscape()
 			RemoveChunk(RemovableChunk.Key);
 			RemovableChunk.Value = false;
 		}
+
+		DrawPathDebug( ChunkPath );
 
 		IsDataReady = false;
 		IsWorking = false;
@@ -257,14 +295,13 @@ void ARMCLandscape::SetPath(const TArray<TPair<FIntPoint ,FVector2D> >& ReverseP
 	this->IsPathFound = true;
 	return;
 }
-void ARMCLandscape::DrawPathDebug()
+void ARMCLandscape::DrawPathDebug(const TArray<FVector2D>& DrawPath )
 {
-	UE_LOG(LogTemp, Display, TEXT("Path Num : %d"), this->Path.Num());
+	//UE_LOG(LogTemp, Display, TEXT("Path Num : %d"), DrawPath.Num());
 
-	for( int32 i = 0; i < Path.Num(); i++ )
+	for( int32 i = 0; i < DrawPath.Num(); i++ )
 	{
-		FVector Point = FVector(Path[i].Value.X, Path[i].Value.Y, GenerateHeight(Path[i].Value) + 100.f );
-		// UE_LOG(LogTemp, Display, TEXT("Path[%d] : %s"), i, *Point.ToString());
+		FVector Point = FVector(DrawPath[i].X, DrawPath[i].Y, GenerateHeight( DrawPath[i]) + 100.f );
 
 		DrawDebugPoint(
 			this->GetWorld(),
@@ -274,6 +311,7 @@ void ARMCLandscape::DrawPathDebug()
 			true
 		);
 	}
+
 }
 // Public ↑
 
@@ -349,7 +387,7 @@ void ARMCLandscape::GenerateStreamSet(const FIntPoint& ChunkCoord, RealtimeMesh:
 
 
 	// actual data to use
-	TArray<FVector3f> Vertices, Tangents, Normals;
+	TArray<FVector3f> Vertices, Tangents, Normals; 
 	TArray<uint32> Triangles;
 	TArray<FVector2DHalf> UVs;
 
@@ -360,8 +398,19 @@ void ARMCLandscape::GenerateStreamSet(const FIntPoint& ChunkCoord, RealtimeMesh:
 		for(int32 iX = 0; iX < VerticesPerChunk; iX++)
 		{
 			FVector3f Vertex = FVector3f(iX, iY, 0.0f) * VertexSpacing;
+			if( bDoPathFinding )
+			{
+				// TODO: multiple path management.
+				TArray<int32> Indices;
+				PathByChunk.MultiFind( ChunkCoord, Indices );
+				if(Indices.Num() > 0)
+				{
+					FindPath(ChunkCoord, Indices[0], ChunkPath );
+				}
+			}
 			if( ShouldGenerateHeight )
 			{
+				// TODO: Road height change.
 				Vertex.Z = GenerateHeight( FVector2D(Vertex.X, Vertex.Y) + Offset);
 			}
 			Vertices.Add(Vertex);
@@ -592,16 +641,143 @@ void ARMCLandscape::GenerateChunkOrder()
 	return;
 }
 
-void ARMCLandscape::FindPath(const FIntPoint& Chunk, const int32& Index)
+void ARMCLandscape::FindPath(const FIntPoint& Chunk, const int32& Index, TArray<FVector2D>& OutPath)
 {
-	// 메모 (실제 도로 생성시)
-	// 한 청크 내에서 이전 path 와 연속적인 경우 동일 spline으로 처리하면 됌.
-	// 멀리서 우회해서 들어온 path 라서 연속적이지 않은 경우 새로 spline을 생성해줘야함.
-	// 쉽지않네.
+	// the 'Chunk' should contain 'Index'. ( Index of the TArray<TPair<FIntPoint, FVector2D>> Path ) )
+	if(Chunk != this->Path[Index].Key || Index + 1 >= Path.Num() )
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Finding path Error. check ARMCLandscape::FindPath"));
+		return;
+	}
 
-	// First, let's just do pathfinding in this function. ( A* )
-	// do only one point to another pathfinding in specific chunk.
+	// Index == the index of the gate.
+	FVector2D Offset = FVector2D(Chunk.X, Chunk.Y) * ChunkLength;
+
+	FVector2D Begin = this->Path[Index].Value;
+	FVector2D Dest = this->Path[Index+1].Value;
+
+	struct FNode
+	{
+		FNode(){};
+		FNode(FVector2D Loc, float Priority) : Loc(Loc), Priority(Priority) {}
+
+		FVector2D Loc;
+		float Priority;
+	};
+	struct FNodePredicate
+	{
+		bool operator()(const FNode& A, const FNode& B) const
+		{
+			// should make min heap.
+			return A.Priority < B.Priority;
+		}
+	};
+
+	TArray<FNode> Frontier;
+	Frontier.Heapify( FNodePredicate() );
+	Frontier.HeapPush( FNode(Begin, 0.f), FNodePredicate() );
 	
+	TMap<FVector2D, float> CostMap;
+	CostMap.Add( Begin,  0.f );
+
+	TMap<FVector2D, FVector2D> Came_from;
+	TArray<FVector2D> ReversePath;
+
+	while( !Frontier.IsEmpty() )
+	{
+		FNode Current;
+		Frontier.HeapPop( Current, FNodePredicate() );
+
+		if( Current.Priority >= INFLOAT )
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Can't remake path Error"));
+			return;
+		}
+
+		float* OldCost = CostMap.Find(Current.Loc);
+		if( OldCost != nullptr && Current.Priority >= *OldCost + PathFinder->GetDistSquared( Current.Loc, Dest ) )
+		{
+			continue;
+		}
+
+		if( Current.Loc == Dest ) // met goal.
+		{
+			FVector2D PathLoc = Current.Loc;
+			ReversePath.Emplace( PathLoc );
+			
+			while( PathLoc != Begin )
+			{
+				FVector2D* PathFrom = Came_from.Find( PathLoc );
+				if( PathFrom == nullptr )
+				{
+					UE_LOG(LogTemp, Warning, TEXT("PathError"));
+					return;
+				}
+
+				ReversePath.Emplace( *PathFrom );
+				PathLoc = *PathFrom;
+			}
+
+			OutPath.Empty();
+			int32 Num = ReversePath.Num();
+			OutPath.SetNum( Num );
+			for( int32 i = 0; i < Num; i++ )
+			{
+				OutPath[i] = ReversePath[ Num - 1 - i ];
+			}
+			return;
+		}
+
+
+		FVector2D Loc = Current.Loc;
+		Loc.X -= VertexSpacing;
+		Loc.Y -= VertexSpacing;
+		
+		for( int32 i = 0; i<3; i++ )
+		{
+			float StepY = i*VertexSpacing;
+
+			for( int32 j = 0; j<3; j++ )
+			{
+				// ignore cur('5')
+				if( j == 1 && i == 1) 
+				{
+					continue;
+				}
+
+				float StepX = j * VertexSpacing;
+				FNode Neighbor;
+				Neighbor.Loc = FVector2D( Loc.X + StepX, Loc.Y + StepY );
+				// check if out of Chunk Boundary
+				if( !PathFinder->IsInBoundary( Chunk, Neighbor.Loc ) )
+				{
+					continue;
+				}
+
+				float NewCost = INFLOAT;
+				FVector Current3D = PathFinder->ConvertTo3D(Current.Loc);
+				FVector Neighbor3D = PathFinder->ConvertTo3D(Neighbor.Loc);
+
+				float SlopeCheck = PathFinder->GetSlopeSquared(Current3D, Neighbor3D);
+				if( SlopeCheck <= this->Slope * this->Slope )
+				{
+					NewCost = PathFinder->GetDistSquared(Current3D, Neighbor3D);
+				}
+				float CostNow = Current.Priority - PathFinder->GetDistSquared( Current.Loc, Dest );
+				NewCost += CostNow;
+
+				OldCost = CostMap.Find(Neighbor.Loc);
+				if( OldCost == nullptr || *OldCost > NewCost )
+				{
+					CostMap.Emplace( Neighbor.Loc, NewCost );
+					Neighbor.Priority = NewCost + PathFinder->GetDistSquared( Neighbor.Loc, Dest );
+
+					Frontier.HeapPush( Neighbor, FNodePredicate() );
+				}
+			}
+		}
+	} // end of while
+
 }
 
 /* Tools */
