@@ -19,6 +19,8 @@ void ARuntimeTerrain::OnConstruction( const FTransform& Transform )
 
 }
 
+
+
 void ARuntimeTerrain::GenerateLandscape()
 {
     for( auto& Elem: this->ChunkOrder )
@@ -45,6 +47,9 @@ void ARuntimeTerrain::RemoveLandscape()
     return;
 }
 
+
+
+
 // returns StreamSet for a Chunk
 void ARuntimeTerrain::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet)
 {
@@ -54,50 +59,19 @@ void ARuntimeTerrain::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealti
 	// scale UV based on vetex spacing
 	float UVScale = VertexSpacing / TextureSize;
 
-
 	// actual data to use
 	TArray<FVector3f> Vertices, Tangents, Normals; 
 	TArray<uint32> Triangles;
 	TArray<FVector2DHalf> UVs;
 
+	GetVertices( Chunk, 0, VerticesPerChunk, VertexSpacing, 
+		Vertices ); // this line for OutParam.
 
-	// Vertices and UVs
-	for(int32 iY = 0; iY < VerticesPerChunk; iY++)
-	{
-		for(int32 iX = 0; iX < VerticesPerChunk; iX++)
-		{
-			FVector3f Vertex = FVector3f(iX, iY, 0.0f) * VertexSpacing;
-			if( ShouldGenerateHeight )
-			{
-				// TODO: Road height change.
-				Vertex.Z = GetHeight( FVector2D(Vertex.X, Vertex.Y) + Offset);
-			}
-			Vertices.Add(Vertex);
+	GetUVs( Chunk, 0, VerticesPerChunk, UVScale, 
+		UVs );
 
-			FVector2DHalf UV;
-			UV.X = (Chunk.X * (VerticesPerChunk - 1) + iX) * UVScale;
-			UV.Y = (Chunk.Y * (VerticesPerChunk - 1) + iY) * UVScale;
-			UVs.Add(UV);
-		}
-	}
-
-
-	// Triangles
-	// CounterClockwise, Right -> X+  Down -> Y+ (UE)
-	for (int32 iY = 0; iY < VerticesPerChunk - 1; iY++)
-	{
-		for (int32 iX = 0; iX < VerticesPerChunk - 1; iX++)
-		{
-			int32 CurrentVertex = iX + iY * VerticesPerChunk;
-			Triangles.Add(CurrentVertex);
-			Triangles.Add(CurrentVertex + VerticesPerChunk);
-			Triangles.Add(CurrentVertex + 1);
-
-			Triangles.Add(CurrentVertex + VerticesPerChunk);
-			Triangles.Add(CurrentVertex + VerticesPerChunk + 1);
-			Triangles.Add(CurrentVertex + 1);
-		}
-	}
+	GetTriangles( VerticesPerChunk, 
+		Triangles );
 
 	Tangents.SetNum(Vertices.Num());
 	Normals.SetNum(Vertices.Num());
@@ -106,108 +80,21 @@ void ARuntimeTerrain::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealti
 	TArray<FVector3f> BigVertices;
 	TArray<uint32> BigTriangles;
 	
-
-	for(int32 iY = -1 ; iY < VerticesPerChunk + 1; iY++)
-	{
-		for(int32 iX = -1; iX < VerticesPerChunk + 1; iX++)
-		{
-			FVector3f Vertex = FVector3f(iX, iY, 0.0f) * VertexSpacing;
-			if(ShouldGenerateHeight)
-			{
-				Vertex.Z = GetHeight( FVector2D(Vertex.X, Vertex.Y) + Offset );
-			}
-			BigVertices.Add(Vertex);
-		}
-	}
-
-	for (int32 iY = 0; iY < VerticesPerChunk + 2; iY++)
-	{
-		for (int32 iX = 0; iX < VerticesPerChunk + 2; iX++)
-		{
-			int32 RowLength = VerticesPerChunk + 2;
-			int32 CurrentVertex = iX + iY * RowLength;
-			BigTriangles.Add(CurrentVertex);
-			BigTriangles.Add(CurrentVertex + RowLength);
-			BigTriangles.Add(CurrentVertex + 1);
-
-			BigTriangles.Add(CurrentVertex + RowLength);
-			BigTriangles.Add(CurrentVertex + RowLength + 1);
-			BigTriangles.Add(CurrentVertex + 1);
-		}
-	}
+	GetVertices( Chunk, -1, VerticesPerChunk + 1, VertexSpacing, 
+		BigVertices );
+	GetTriangles( VerticesPerChunk + 2, 
+		BigTriangles );
+	
+	// Normals and Tangents made out of Big datas.
+	GetTangents( VerticesPerChunk, BigTriangles, BigVertices, 
+		Tangents, Normals );
 
 
-	// Normals and Tangents from Big datas
-	int RowLength = VerticesPerChunk + 2;
-
-	RealtimeMeshAlgo::GenerateTangents(
-		TConstArrayView<uint32>(BigTriangles),
-		BigVertices,
-		nullptr, // UV Getter. We made uv.
-		[&Normals, &Tangents, &RowLength](int index, FVector3f Tangent, FVector3f Normal) -> void
-		{
-			// RowLength == ColumnLength
-			int iY = index / RowLength;
-			int iX = index % RowLength;
-
-			// initial index array (ex) RowLength = 4
-			/* 
-			0 	1 	2 	3
-			4 	5 	6 	7
-			8 	9 	10	11
-			12 	13 	14 	15
-			*/
-
-			if( iY <= 0 || iY >= RowLength - 1  	// ignore first and last Row
-				||
-				iX <= 0 || iX >= RowLength - 1 ) 	// ignore first and last Column
-			{
-				return;
-			}
-
-			// index array now
-			/* 
-			x 	x 	x 	x
-			x 	5 	6 	x
-			x 	9 	10	x
-			x 	x 	x	x
-			*/
-
-			index = index - 1;
-			index = index - ( iY * RowLength );
-
-			// index array now
-			/* 
-			x 	x 	x 	x
-			x 	0 	1	x
-			x 	0 	1	x
-			x 	x 	x	x
-			*/
-
-			int VerticesPerChunk = RowLength - 2;
-			index = index + (iY-1) * VerticesPerChunk;
-
-			// index array now
-			/*
-				0	1
-				2	3
-			*/
-			Normals[index] = Normal;
-			Tangents[index] = Tangent;
-		},
-		true
-	);
-
-
-	// Big data done ↑
-
-
-	// Datas into StreamSet( class Member Var )
-	RealtimeMesh::TRealtimeMeshBuilderLocal<uint32, FPackedNormal, FVector2DHalf, 1> Builder(OutStreamSet);
+	// Datas into StreamSet( class Member Var ) RMC syntax
+	RealtimeMesh::TRealtimeMeshBuilderLocal<uint32, FPackedNormal, FVector2DHalf, 1> Builder( OutStreamSet );
 	Builder.EnableTangents();
 	Builder.EnableTexCoords();
 	Builder.EnableColors();
-
 	Builder.EnablePolyGroups();
 
 	for (int32 i = 0; i < Vertices.Num(); i++)
@@ -433,3 +320,139 @@ float ARuntimeTerrain::GetHeight( const FVector2D& Location )
 	return height;
 }
 
+// returns Vertices for Streamset.
+void ARuntimeTerrain::GetVertices(const FIntPoint& Chunk, const int32 & StartIndex, const int32 & EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices)
+{
+
+	OutVertices.Empty();
+
+	FVector2D Offset = FVector2D( Chunk.X , Chunk.Y ) * ChunkLength; 		// ChunkLength should always be same.
+	
+	for( int32 iY = StartIndex; iY < EndIndex; iY++ )
+	{
+		for( int32 iX = StartIndex; iX < EndIndex; iX++ )
+		{
+			FVector3f Vertex = FVector3f(iX, iY, 0.0f) * VertexSpace; 		// VertexSpacing & VertexCount may vary later. (LoD)
+			if( this->ShouldGenerateHeight )
+			{
+				Vertex.Z = GetHeight( FVector2D( Vertex.X, Vertex.Y ) +  Offset );
+			}
+			OutVertices.Add( Vertex );
+		}
+	}
+
+	return;
+}
+
+// returns UVs for StreamSet
+void ARuntimeTerrain::GetUVs(const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs)
+{
+	
+	OutUVs.Empty();
+
+	int32 VertexCount = EndIndex - StartIndex;
+
+	for( int32 iY = StartIndex; iY < EndIndex; iY++ )
+	{
+		for( int32 iX = StartIndex; iX < EndIndex; iX++ )
+		{
+			FVector2DHalf UV; // Mark startpoint of every uv tile
+			UV.X = ( Chunk.X * (VertexCount - 1) + iX ) * UVscale;
+			UV.Y = ( Chunk.Y * (VertexCount - 1) + iY ) * UVscale;
+
+			OutUVs.Add( UV );
+		}
+	}
+
+	return;
+}
+
+// returns Triangle indices for StreamSet
+void ARuntimeTerrain::GetTriangles(const int32& VertexCount, TArray<uint32>& OutTriangles)
+{
+	OutTriangles.Empty();
+
+	for (int32 iY = 0; iY < VertexCount - 1; iY++)
+	{
+		for (int32 iX = 0; iX < VertexCount - 1; iX++)
+		{
+			int32 CurrentVertex = iX + iY * VertexCount;
+			OutTriangles.Add( CurrentVertex );
+			OutTriangles.Add( CurrentVertex + VertexCount );
+			OutTriangles.Add( CurrentVertex + 1 );
+
+			OutTriangles.Add( CurrentVertex + VertexCount );
+			OutTriangles.Add( CurrentVertex + VertexCount + 1 ) ;
+			OutTriangles.Add( CurrentVertex + 1 );
+		}
+	}
+
+	return;
+}
+
+// returns Small Tangents and Normals that are continuous along chunks.
+void ARuntimeTerrain::GetTangents( const int32& VertexCount, const TArray<uint32>& BigTriangles, const TArray<FVector3f>& BigVertices, TArray<FVector3f>& OutTangents, TArray<FVector3f>& OutNormals )
+{
+
+	int32 RowLength = VertexCount + 2;
+
+	RealtimeMeshAlgo::GenerateTangents(
+		TConstArrayView<uint32>( BigTriangles ),
+		BigVertices,
+		nullptr, // UV Getter. We made uv.
+		[&OutNormals, &OutTangents, &RowLength](int index, FVector3f Tangent, FVector3f Normal) -> void
+			{
+			// RowLength == ColumnLength
+			int iY = index / RowLength;
+			int iX = index % RowLength;
+
+			// initial index array (ex) RowLength = 4
+			/* 
+			0 	1 	2 	3
+			4 	5 	6 	7
+			8 	9 	10	11
+			12 	13 	14 	15
+			*/
+
+			if( iY <= 0 || iY >= RowLength - 1  	// ignore first and last Row
+				||
+				iX <= 0 || iX >= RowLength - 1 ) 	// ignore first and last Column
+			{
+				return;
+			}
+
+			// index array now
+			/* 
+			x 	x 	x 	x
+			x 	5 	6 	x
+			x 	9 	10	x
+			x 	x 	x	x
+			*/
+
+			index = index - 1;
+			index = index - ( iY * RowLength );
+
+			// index array now
+			/* 
+			x 	x 	x 	x
+			x 	0 	1	x
+			x 	0 	1	x
+			x 	x 	x	x
+			*/
+
+			int VerticesPerChunk = RowLength - 2;
+			index = index + (iY-1) * VerticesPerChunk;
+
+			// index array now
+			/*
+				0	1
+				2	3
+			*/
+			OutNormals[index] = Normal;
+			OutTangents[index] = Tangent;
+			},
+		true
+	);
+
+	return;
+}
