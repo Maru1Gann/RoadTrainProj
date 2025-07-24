@@ -11,6 +11,7 @@
 
 #include "RuntimeTerrain.generated.h"   // must be last
 
+struct FPerlinNoiseVariables;
 
 UCLASS()
 class ROADTRAINPROJ_API ARuntimeTerrain : public AActor
@@ -33,7 +34,7 @@ public:
 	UPROPERTY( EditAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 1) )
 	    bool ShouldGenerateHeight = true;
     UPROPERTY( EditAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 2) )
-	    TArray<struct FPerlinNoiseVariables> NoiseLayers;
+	    TArray<FPerlinNoiseVariables> NoiseLayers;
 
     UPROPERTY( EditAnywhere, Category = "Chunks|Material")
 	    UMaterialInterface* ChunkMaterial;
