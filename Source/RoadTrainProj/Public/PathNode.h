@@ -8,18 +8,21 @@
 struct FPathNode
 {
     FPathNode(){}
-    FPathNode( const FIntPoint& Chunk, const FIntPoint& Pos ) : Chunk(Chunk), Pos(Pos) {};
+    FPathNode( const FIntPoint& Belong, const FIntPoint& Next, const FIntPoint& Pos ) : Belong(Belong), Next(Next), Pos(Pos) {};
 
-    FIntPoint Chunk;
-    FIntPoint Pos;
+    FIntPoint Belong;   // chunk it belongs
+    FIntPoint Next;     // chunk it's headed ( if it is gate )
+    FIntPoint Pos;      // Coordinate inside the chunk. ( * VertexSpacing )
 
     bool operator==( const FPathNode& Other ) const
     {
-        return Chunk == Other.Chunk && Pos == Other.Pos;
+        return Belong == Other.Belong && Next == Other.Next && Pos == Other.Pos;
     }
 };
 
 FORCEINLINE uint32 GetTypeHash( const FPathNode& Key )
 {
-    return HashCombineFast( GetTypeHash( Key.Chunk ), GetTypeHash( Key.Pos ) );
+    uint32 Hash = HashCombine( GetTypeHash(Key.Belong), GetTypeHash( Key.Next ) );
+    Hash = HashCombine( Hash, GetTypeHash( Key.Pos ) );
+    return Hash;
 }

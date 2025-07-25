@@ -19,7 +19,20 @@ void ARuntimeTerrain::OnConstruction( const FTransform& Transform )
 
 }
 
+void ARuntimeTerrain::BeginPlay()
+{
+	// Max Min heap Predicate Test
+	// Super::BeginPlay();
 
+	// TArray< float > Test = { 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 };
+	// auto Predicate = [](const float& A, const float& B){ return A > B; };		// Tested : A>B max heap A<B min heap
+	// Test.Heapify( Predicate );
+
+	// float Temp;
+	// Test.HeapPop( Temp, Predicate );
+
+	// UE_LOG(LogTemp, Display, TEXT("Temp : %f"), Temp);
+}
 
 void ARuntimeTerrain::GenerateLandscape()
 {

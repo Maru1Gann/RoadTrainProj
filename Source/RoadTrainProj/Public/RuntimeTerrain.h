@@ -18,9 +18,16 @@ class ROADTRAINPROJ_API ARuntimeTerrain : public AActor
 {
     GENERATED_BODY()
 
+
 public:
     ARuntimeTerrain();
     virtual void OnConstruction(const FTransform& Transform) override;
+
+protected:
+	// Called when the game starts or when spawned
+	virtual void BeginPlay() override;
+
+public:
 
     UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 1, ClampMin = "10.0", Step = "10.0", Units = "cm") )
 	    float VertexSpacing = 1000.0f;
@@ -45,14 +52,16 @@ public:
     UFUNCTION( CallInEditor, Category = "Chunks" )
         void RemoveLandscape();
 
+    // --------------tools----------------
+    FVector ConvertTo3D( const FVector2D& Location );
+    float GetHeight( const FVector2D& Location );
+
 private:
 	// for debugging & reusing purposes, shown on editor details pannel
 	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 5) )
 	    int32 ChunkCount = 0;
 	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 6) )
 	    float ChunkLength;
-
-
 
     
 	
@@ -70,8 +79,8 @@ private:
     void GetChunkOrder( const int32& ChunkRadius, TArray<FIntPoint>& OutArray );
     FVector2D GetPlayerLocation();
     FIntPoint GetChunk( const FVector2D& Location );
-    FVector ConvertTo3D( const FVector2D& Location );
-    float GetHeight( const FVector2D& Location );
+    // FVector ConvertTo3D( const FVector2D& Location );
+    // float GetHeight( const FVector2D& Location );
 
     // tools_GetStreamset Parts
     void GetVertices( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices );
