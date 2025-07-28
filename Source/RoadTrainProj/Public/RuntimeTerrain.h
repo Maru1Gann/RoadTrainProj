@@ -8,7 +8,6 @@
 #include "RealtimeMeshActor.h"          // AReltimeMeshActor
 #include "Mesh/RealtimeMeshAlgo.h"      // RealtimeMeshAlgo
 
-
 #include "RuntimeTerrain.generated.h"   // must be last
 
 struct FPerlinNoiseVariables;
@@ -45,6 +44,13 @@ public:
 
     UPROPERTY( EditAnywhere, Category = "Chunks|Material")
 	    UMaterialInterface* ChunkMaterial;
+
+    UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 1) )
+    FIntPoint Start;    // global FIntPoint
+    UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 2) )
+    FIntPoint End;      // global
+    UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 3) )
+	float Slope = 30;
     
 
     UFUNCTION( CallInEditor, Category = "Chunks" )
@@ -54,6 +60,7 @@ public:
 
     // --------------tools----------------
     FVector ConvertTo3D( const FVector2D& Location );
+    FVector ConvertTo3D( const FIntPoint& Location );
     float GetHeight( const FVector2D& Location );
 
 private:
@@ -63,7 +70,7 @@ private:
 	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 6) )
 	    float ChunkLength;
 
-    
+    TSharedPtr<class FPathFinder> PathFinder;
 	
     TArray<FIntPoint> ChunkOrder;
     // TODO: maybe FCriticalSection Mutex

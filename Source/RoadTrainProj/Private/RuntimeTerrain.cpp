@@ -2,12 +2,18 @@
 #include "RuntimeTerrain.h"
 #include "PerlinNoiseVariables.h"   // NoiseLayers
 
+#include "PathFinder2.h" // path finding
+#include "PathNode.h"
+
+#include "DrawDebugHelpers.h" // debug points
+
 
 ARuntimeTerrain::ARuntimeTerrain()
 {
     PrimaryActorTick.bCanEverTick = false; // disable tick
     RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root")); // cannot see actor in editor bug fix
     
+	this->PathFinder = MakeShared<FPathFinder>( *this );
 }
 
 void ARuntimeTerrain::OnConstruction( const FTransform& Transform )
@@ -21,9 +27,10 @@ void ARuntimeTerrain::OnConstruction( const FTransform& Transform )
 
 void ARuntimeTerrain::BeginPlay()
 {
-	// Max Min heap Predicate Test
-	// Super::BeginPlay();
+	
+	Super::BeginPlay();
 
+	// Max Min heap Predicate Test
 	// TArray< float > Test = { 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 };
 	// auto Predicate = [](const float& A, const float& B){ return A > B; };		// Tested : A>B max heap A<B min heap
 	// Test.Heapify( Predicate );
@@ -32,6 +39,69 @@ void ARuntimeTerrain::BeginPlay()
 	// Test.HeapPop( Temp, Predicate );
 
 	// UE_LOG(LogTemp, Display, TEXT("Temp : %f"), Temp);
+
+	// PathFinding Test
+	// FIntPoint Chunk = Start / VerticesPerChunk;
+	// FIntPoint NextChunk = End / VerticesPerChunk;
+	// UE_LOG(LogTemp, Display, TEXT("NextChunk %s"), *NextChunk.ToString() );
+	// FPathNode Temp;
+	// float Cost = PathFinder->GetBestGate( Chunk, NextChunk, FIntPoint(0,0), Temp );
+
+	// FVector2D Loc = ( Temp.Belong * VerticesPerChunk + Temp.Pos ) * VertexSpacing;
+
+	// UE_LOG(LogTemp, Display, TEXT("Cost = %f"), Cost);
+	// DrawDebugPoint(
+	// 	this->GetWorld(),
+	// 	ConvertTo3D(Start),
+	// 	30.f,
+	// 	FColor::Red,
+	// 	true
+	// );
+	// DrawDebugPoint(
+	// 	this->GetWorld(),
+	// 	ConvertTo3D(End),
+	// 	30.f,
+	// 	FColor::Red,
+	// 	true
+	// );
+	// DrawDebugPoint(
+	// 	this->GetWorld(),
+	// 	ConvertTo3D(Loc),
+	// 	30.f,
+	// 	FColor::Blue,
+	// 	true
+	// );
+
+	// TArray<FIntPoint> Path;
+	// FPathNode StartNode(Chunk, Chunk, Start - Chunk * VerticesPerChunk );
+	// PathFinder->GetPath( StartNode, Temp, Path );
+
+	// for(auto& Elem : Path)
+	// {
+	// 	FVector Current = ConvertTo3D( PathFinder->ConvertToGlobal( Chunk, Elem ) );
+	// 	DrawDebugPoint(
+	// 		this->GetWorld(),
+	// 		Current,
+	// 		15.f,
+	// 		FColor::Green,
+	// 		true
+	// 	);
+	// }
+
+	// FPathNode EndNode( NextChunk, NextChunk, End - NextChunk * VerticesPerChunk );
+	// PathFinder->GetPath( Temp, EndNode, Path );
+	// 	for(auto& Elem : Path)
+	// {
+	// 	FVector Current = ConvertTo3D( PathFinder->ConvertToGlobal( NextChunk, Elem ) );
+	// 	DrawDebugPoint(
+	// 		this->GetWorld(),
+	// 		Current,
+	// 		15.f,
+	// 		FColor::Green,
+	// 		true
+	// 	);
+	// }
+
 }
 
 void ARuntimeTerrain::GenerateLandscape()
@@ -66,8 +136,8 @@ void ARuntimeTerrain::RemoveLandscape()
 // returns StreamSet for a Chunk
 void ARuntimeTerrain::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet)
 {
-	// Chunk location offset
-	FVector2D Offset = FVector2D( Chunk.X , Chunk.Y ) * ChunkLength;
+	// // Chunk location offset
+	// FVector2D Offset = FVector2D( Chunk.X , Chunk.Y ) * ChunkLength;
 	
 	// scale UV based on vetex spacing
 	float UVScale = VertexSpacing / TextureSize;
@@ -299,6 +369,11 @@ FIntPoint ARuntimeTerrain::GetChunk( const FVector2D& Location )
 FVector ARuntimeTerrain::ConvertTo3D( const FVector2D& Location )
 {
     return FVector( Location.X, Location.Y, GetHeight(Location) );
+}
+// Converts Global FIntPoint to FVector with Height
+FVector ARuntimeTerrain::ConvertTo3D( const FIntPoint& Location )
+{
+	return ConvertTo3D( FVector2D( Location.X, Location.Y ) * VertexSpacing );
 }
 
 // returns height made with member noiselayers

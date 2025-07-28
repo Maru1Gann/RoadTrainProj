@@ -6,13 +6,102 @@
 #include <limits>
 const float INFLOAT = std::numeric_limits<float>::infinity(); // float INF for obstacles
 
-// this returns Path from Start to End
-void FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray<FPathNode>& OutPath )
+FPathFinder::FPathFinder( ARuntimeTerrain& RTref ) : RTref(RTref)
 {
-    
+
 }
 
-void FPathFinder::FindPath( const FPathNode& Start, const FPathNode& End, TArray<FPathNode>& OutGates )
+// this returns Path from Start to End ( should be the exact next gate )
+void FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray<FIntPoint>& OutPath )
+{
+    if( Start.Next != End.Belong )
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GetPath Input wrong nodes"));
+        return;
+    }
+
+    OutPath.Empty();
+
+    // change the Pos to the chunk it needs to be.
+    FIntPoint StartPos = ConvertToGlobal( Start.Belong, Start.Pos );
+    StartPos = GlobalToLocal( End.Belong, StartPos );
+
+    // this works almost same as GetBestGate, A*. check it out for detailed comments
+    TArray< TPair< float, FIntPoint> > Frontier;
+    auto Predicate = [](const TPair<float, FIntPoint>& A, const TPair<float, FIntPoint>& B){ return A.Key < B.Key; }; // min heap
+    Frontier.Heapify( Predicate );
+    Frontier.HeapPush( TPair<float, FIntPoint>( 0.f, StartPos ), Predicate );
+
+    TMap< FIntPoint, float > CostMap;
+    CostMap.Emplace( StartPos, 0.f );
+
+    TMap< FIntPoint, FIntPoint > Came_From;
+    TArray<FIntPoint> ReversePath;
+
+    while( !Frontier.IsEmpty() )
+    {
+        TPair<float, FIntPoint> Current;
+        Frontier.HeapPop( Current, Predicate );
+
+        FIntPoint PosNow = Current.Value;
+        float CostNow = CostMap[PosNow];
+        if( CostNow >= INFLOAT )
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Path Rebuilding Failed... How??"));
+            return;
+        }
+        if( PosNow == End.Pos )
+        {
+            //.. do data passing
+            FIntPoint PathPos = End.Pos;
+            ReversePath.Emplace(PathPos);
+
+            while( PathPos != StartPos )
+            {
+                FIntPoint* PathFrom = Came_From.Find( PathPos );
+                if( !PathFrom ) 
+                { UE_LOG(LogTemp, Warning, TEXT("Came_From nullptr error")); return; }
+                PathPos = *PathFrom;
+                ReversePath.Emplace( PathPos );
+            }
+            // reverse the ReversePath
+            OutPath.SetNum( ReversePath.Num() );
+            for( int32 i = 0; i < ReversePath.Num(); i++ )
+            {
+                OutPath[i] = ReversePath[ ReversePath.Num() - 1 - i];
+            }
+
+            return;
+        }
+
+        TArray<FIntPoint> Neighbors;
+        GetNeighbors( PosNow, Neighbors );
+        for( auto& PosNext : Neighbors )
+        {
+            float NewCost = CostNow + GetUnitDistSquared( PosNow, PosNext );
+
+            // check slopes
+            if( GetSlopeSquared( End.Belong, PosNow, PosNext ) > RTref.Slope * RTref.Slope )
+            {
+                NewCost = INFLOAT;
+            }
+
+            float* OldCost = CostMap.Find( PosNext );
+            if( !OldCost || *OldCost > NewCost )
+            {
+                CostMap.Add( PosNext, NewCost );
+                Came_From.Add( PosNext, PosNow );
+                
+                float Priority = NewCost + GetUnitDistSquared( PosNow, PosNext ); // use instead of heuristic()
+                Frontier.HeapPush( TPair<float, FIntPoint>( Priority, PosNext ), Predicate );
+            }
+        }
+    }
+
+}
+
+// this returns all gates on the path. Chunk level PathFinding.
+void FPathFinder::FindPathGates( const FPathNode& Start, const FPathNode& End, TArray<FPathNode>& OutGates )
 {
 
 }
@@ -26,7 +115,7 @@ float FPathFinder::GetBestGate( const FIntPoint& Chunk, const FIntPoint& NextChu
     // we'll make this min heap by float(priority).
     TArray< TPair<float, FIntPoint> > Frontier; 
     // min heap predicate
-    auto Predicate = []( const TPair<float, FIntPoint>& A, const TPair<float, FIntPoint>& B ){ return A.Key < B.Key; };
+    auto Predicate = []( const TPair<float, FIntPoint>& A, const TPair<float, FIntPoint>& B ){ return A.Key < B.Key; }; // function ptr
     Frontier.Heapify( Predicate );
     Frontier.HeapPush( TPair<float, FIntPoint>( 0.f, StartPos ), Predicate );
 
@@ -37,6 +126,11 @@ float FPathFinder::GetBestGate( const FIntPoint& Chunk, const FIntPoint& NextChu
     // Goal set.
     TSet< FIntPoint > GoalSet;
     GetGoalSet(Chunk, NextChunk, GoalSet); // out param.
+    if( GoalSet.IsEmpty() )
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GoalSetEmpty"));
+        return INFLOAT;
+    }
 
     while( !Frontier.IsEmpty() )
     {
@@ -47,26 +141,29 @@ float FPathFinder::GetBestGate( const FIntPoint& Chunk, const FIntPoint& NextChu
         float CostNow = CostMap[PosNow]; // cost always in the map. add cost before pushing to the heap.
 
         // if we met goal, return.   ||  if we see INF on top of min heap, no path. return.
-        if( GoalSet.Contains(PosNow) || CostNow >= INFLOAT )
+        if( GoalSet.Contains( PosNow ) || CostNow >= INFLOAT )
         {
             OutNode = FPathNode(Chunk, NextChunk, PosNow);
             return CostNow;
         }
-
         
         TArray<FIntPoint> Neighbors;
-        GetNeighbors(PosNow, Neighbors);
+        GetNeighbors( PosNow, Neighbors );
         for( auto& PosNext : Neighbors )
         {
             float NewCost = CostNow + GetUnitDistSquared( PosNow, PosNext );
 
-            // TODO : Check SLOPES!!!
+            // check slopes
+            if( GetSlopeSquared( Chunk, PosNow, PosNext ) > RTref.Slope * RTref.Slope )
+            {
+                NewCost = INFLOAT; // too steep
+            }
 
             float* OldCost = CostMap.Find( PosNext );
             if( !OldCost || *OldCost > NewCost )
             {
                 CostMap.Add( PosNext, NewCost );
-                float Priority = NewCost;           // TODO : + Heuristic!!!
+                float Priority = NewCost + Heuristic( ConvertToGlobal( Chunk, PosNext ), RTref.End ); // CHECK : direction not accounted!!
 
                 Frontier.HeapPush(TPair<float, FIntPoint>( Priority, PosNext ), Predicate);
             }
@@ -113,6 +210,7 @@ void FPathFinder::GetGoalSet( const FIntPoint& Chunk, const FIntPoint& NextChunk
 {
     OutGoalSet.Empty();
     FIntPoint Case = NextChunk - Chunk;
+    UE_LOG(LogTemp, Display, TEXT("Case : %s "), *Case.ToString());
     // Case value ( depends on NextChunk Location )
 	//(-1,1)	(0,1)	(1,1)
 	//(-1,0)	S		(1,0)
@@ -172,4 +270,43 @@ int32 FPathFinder::GetUnitDistSquared( const FIntPoint& PosA, const FIntPoint Po
     int32 DeltaY = PosB.Y - PosA.Y;
 
     return DeltaX * DeltaX + DeltaY * DeltaY;
+}
+
+// returns slope %, squared
+float FPathFinder::GetSlopeSquared( const FIntPoint& Chunk, const FIntPoint& PosA, const FIntPoint& PosB )
+{
+    // get tangent and multiply 100.
+
+    float UnitBase = GetUnitDistSquared( PosA, PosB );
+    float UnitHeight = RTref.GetHeight( ConvertToVector2D( Chunk, PosA ) ) - RTref.GetHeight( ConvertToVector2D( Chunk, PosB ) );
+    UnitHeight /= RTref.VertexSpacing;// Convert to UnitHeight
+    UnitHeight *= UnitHeight; // square
+    
+    return ( UnitHeight / UnitBase ) * 100.f * 100.f ;
+}
+
+FVector2D FPathFinder::ConvertToVector2D( const FIntPoint& Chunk, const FIntPoint& Pos )
+{
+    float ChunkLength = RTref.VertexSpacing * ( RTref.VerticesPerChunk-1 );
+    FVector2D Offset = FVector2D( Chunk.X, Chunk.Y ) * ChunkLength;
+
+    return FVector2D( Pos.X, Pos.Y ) * RTref.VertexSpacing + Offset;
+}
+
+int32 FPathFinder::Heuristic( const FIntPoint& PosA, const FIntPoint& PosB )
+{
+    return GetUnitDistSquared( PosA, PosB );
+}
+
+FIntPoint FPathFinder::ConvertToGlobal( const FIntPoint& Chunk, const FIntPoint& Pos )
+{
+    FIntPoint Offset = Chunk * RTref.VerticesPerChunk;
+
+    return Offset + Pos;
+}
+
+FIntPoint FPathFinder::GlobalToLocal( const FIntPoint& Chunk, const FIntPoint& GlobalPos )
+{
+    FIntPoint ChunkGlobalPos = Chunk * RTref.VerticesPerChunk;
+    return GlobalPos - ChunkGlobalPos;
 }

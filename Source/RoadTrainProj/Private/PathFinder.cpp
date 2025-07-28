@@ -494,7 +494,6 @@ float FPathFinder::GetSlopeSquared(const FVector& Current, const FVector& Next)
 {
 	// get tangent and multiply 100.
 
-	
 	float Base = FVector2D::DistSquared( FVector2D(Current.X, Current.Y), FVector2D(Next.X, Next.Y) ); // 밑변. base
 	float Height = Current.Z - Next.Z;
 	Height *= Height; // square

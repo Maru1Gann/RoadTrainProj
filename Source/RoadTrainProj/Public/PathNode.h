@@ -7,6 +7,7 @@
 // this Node is a position of a Vertex in worldspace.
 struct FPathNode
 {
+    
     FPathNode(){}
     FPathNode( const FIntPoint& Belong, const FIntPoint& Next, const FIntPoint& Pos ) : Belong(Belong), Next(Next), Pos(Pos) {};
 
