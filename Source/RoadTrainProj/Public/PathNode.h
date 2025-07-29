@@ -23,7 +23,7 @@ struct FPathNode
 
 FORCEINLINE uint32 GetTypeHash( const FPathNode& Key )
 {
-    uint32 Hash = HashCombine( GetTypeHash(Key.Belong), GetTypeHash( Key.Next ) );
+    uint32 Hash = HashCombine( GetTypeHash( Key.Belong ), GetTypeHash( Key.Next ) );
     Hash = HashCombine( Hash, GetTypeHash( Key.Pos ) );
     return Hash;
 }

@@ -62,6 +62,10 @@ public:
     FVector ConvertTo3D( const FVector2D& Location );
     FVector ConvertTo3D( const FIntPoint& Location );
     float GetHeight( const FVector2D& Location );
+    void GetChunkOrder( const int32& ChunkRadius, TArray<FIntPoint>& OutArray );
+    FVector2D GetPlayerLocation();
+    FIntPoint GetChunk( const FVector2D& Location );
+    // --------------tools----------------
 
 private:
 	// for debugging & reusing purposes, shown on editor details pannel
@@ -82,12 +86,6 @@ private:
     void RemoveChunk( const FIntPoint& Chunk );
 
 
-    // ----------------tools----------------------
-    void GetChunkOrder( const int32& ChunkRadius, TArray<FIntPoint>& OutArray );
-    FVector2D GetPlayerLocation();
-    FIntPoint GetChunk( const FVector2D& Location );
-    // FVector ConvertTo3D( const FVector2D& Location );
-    // float GetHeight( const FVector2D& Location );
 
     // tools_GetStreamset Parts
     void GetVertices( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices );

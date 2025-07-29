@@ -30,78 +30,63 @@ void ARuntimeTerrain::BeginPlay()
 	
 	Super::BeginPlay();
 
-	// Max Min heap Predicate Test
-	// TArray< float > Test = { 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 };
-	// auto Predicate = [](const float& A, const float& B){ return A > B; };		// Tested : A>B max heap A<B min heap
-	// Test.Heapify( Predicate );
+	// Start and End Red debug point
+	DrawDebugPoint(
+		this->GetWorld(),
+		ConvertTo3D(Start),
+		30.f,
+		FColor::Red,
+		true
+	);
+	DrawDebugPoint(
+		this->GetWorld(),
+		ConvertTo3D(End),
+		30.f,
+		FColor::Red,
+		true
+	);
 
-	// float Temp;
-	// Test.HeapPop( Temp, Predicate );
+	// High Level PathFinding Test. 
+	TArray<FPathNode> Gates;
+	PathFinder->FindPathGates(Start, End, Gates);
 
-	// UE_LOG(LogTemp, Display, TEXT("Temp : %f"), Temp);
+	for( auto& Elem : Gates )
+	{
+		FVector Current = ConvertTo3D( PathFinder->ConvertToGlobal( Elem.Belong, Elem.Pos ) );
 
-	// PathFinding Test
-	// FIntPoint Chunk = Start / VerticesPerChunk;
-	// FIntPoint NextChunk = End / VerticesPerChunk;
-	// UE_LOG(LogTemp, Display, TEXT("NextChunk %s"), *NextChunk.ToString() );
-	// FPathNode Temp;
-	// float Cost = PathFinder->GetBestGate( Chunk, NextChunk, FIntPoint(0,0), Temp );
+        UE_LOG(LogTemp, Warning, 
+            TEXT("Current %s, %s, %s"), *Elem.Belong.ToString(), *Elem.Next.ToString(), *Elem.Pos.ToString());
 
-	// FVector2D Loc = ( Temp.Belong * VerticesPerChunk + Temp.Pos ) * VertexSpacing;
+		DrawDebugPoint(
+			this->GetWorld(),
+			Current,
+			15.f,
+			FColor::Blue,
+			true
+		);
+	}
 
-	// UE_LOG(LogTemp, Display, TEXT("Cost = %f"), Cost);
-	// DrawDebugPoint(
-	// 	this->GetWorld(),
-	// 	ConvertTo3D(Start),
-	// 	30.f,
-	// 	FColor::Red,
-	// 	true
-	// );
-	// DrawDebugPoint(
-	// 	this->GetWorld(),
-	// 	ConvertTo3D(End),
-	// 	30.f,
-	// 	FColor::Red,
-	// 	true
-	// );
-	// DrawDebugPoint(
-	// 	this->GetWorld(),
-	// 	ConvertTo3D(Loc),
-	// 	30.f,
-	// 	FColor::Blue,
-	// 	true
-	// );
+	// Path Rebuilding Test
 
-	// TArray<FIntPoint> Path;
-	// FPathNode StartNode(Chunk, Chunk, Start - Chunk * VerticesPerChunk );
-	// PathFinder->GetPath( StartNode, Temp, Path );
+	for( int i = 0; i < Gates.Num() - 1; i++)
+	{
+		TArray<FIntPoint> Path;
+		PathFinder->GetPath(Gates[i], Gates[i+1], Path);
 
-	// for(auto& Elem : Path)
-	// {
-	// 	FVector Current = ConvertTo3D( PathFinder->ConvertToGlobal( Chunk, Elem ) );
-	// 	DrawDebugPoint(
-	// 		this->GetWorld(),
-	// 		Current,
-	// 		15.f,
-	// 		FColor::Green,
-	// 		true
-	// 	);
-	// }
+		for( auto& Elem: Path )
+		{
+			
+			DrawDebugPoint(
+				this->GetWorld(),
+				ConvertTo3D( PathFinder->ConvertToGlobal( Gates[i].Next, Elem ) ),
+				5.f,
+				FColor::Green,
+				true
+			);
 
-	// FPathNode EndNode( NextChunk, NextChunk, End - NextChunk * VerticesPerChunk );
-	// PathFinder->GetPath( Temp, EndNode, Path );
-	// 	for(auto& Elem : Path)
-	// {
-	// 	FVector Current = ConvertTo3D( PathFinder->ConvertToGlobal( NextChunk, Elem ) );
-	// 	DrawDebugPoint(
-	// 		this->GetWorld(),
-	// 		Current,
-	// 		15.f,
-	// 		FColor::Green,
-	// 		true
-	// 	);
-	// }
-
+		}
+	}
+	
 }
 
 void ARuntimeTerrain::GenerateLandscape()
@@ -362,7 +347,7 @@ FVector2D ARuntimeTerrain::GetPlayerLocation()
 // returns the Chunk where Location belongs.
 FIntPoint ARuntimeTerrain::GetChunk( const FVector2D& Location )
 {
-    return FIntPoint( FMath::FloorToInt32( Location.X ), FMath::FloorToInt32( Location.Y ) );
+    return FIntPoint( FMath::FloorToInt32( Location.X / ChunkLength ), FMath::FloorToInt32( Location.Y / ChunkLength ) );
 }
 
 // returns Location with height

@@ -12,12 +12,12 @@ FPathFinder::FPathFinder( ARuntimeTerrain& RTref ) : RTref(RTref)
 }
 
 // this returns Path from Start to End ( should be the exact next gate )
-void FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray<FIntPoint>& OutPath )
+float FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray<FIntPoint>& OutPath )
 {
     if( Start.Next != End.Belong )
     {
         UE_LOG(LogTemp, Warning, TEXT("GetPath Input wrong nodes"));
-        return;
+        return INFLOAT;
     }
 
     OutPath.Empty();
@@ -48,7 +48,7 @@ void FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray<
         if( CostNow >= INFLOAT )
         {
             UE_LOG(LogTemp, Warning, TEXT("Path Rebuilding Failed... How??"));
-            return;
+            return CostNow;
         }
         if( PosNow == End.Pos )
         {
@@ -60,7 +60,7 @@ void FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray<
             {
                 FIntPoint* PathFrom = Came_From.Find( PathPos );
                 if( !PathFrom ) 
-                { UE_LOG(LogTemp, Warning, TEXT("Came_From nullptr error")); return; }
+                { UE_LOG(LogTemp, Warning, TEXT("Came_From nullptr error")); return INFLOAT; }
                 PathPos = *PathFrom;
                 ReversePath.Emplace( PathPos );
             }
@@ -71,7 +71,7 @@ void FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray<
                 OutPath[i] = ReversePath[ ReversePath.Num() - 1 - i];
             }
 
-            return;
+            return CostNow;
         }
 
         TArray<FIntPoint> Neighbors;
@@ -96,13 +96,113 @@ void FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray<
                 Frontier.HeapPush( TPair<float, FIntPoint>( Priority, PosNext ), Predicate );
             }
         }
-    }
+    } // end of while
 
+    return INFLOAT;
 }
 
-// this returns all gates on the path. Chunk level PathFinding.
-void FPathFinder::FindPathGates( const FPathNode& Start, const FPathNode& End, TArray<FPathNode>& OutGates )
+// this returns all gates on the path. Chunk level PathFinding. Start, End are Global grid FIntPoint
+void FPathFinder::FindPathGates( const FIntPoint& Start, const FIntPoint& End, TArray<FPathNode>& OutGates )
 {
+    OutGates.Empty();
+
+    FIntPoint StartChunk = GetChunk(Start);
+    FIntPoint EndChunk = GetChunk(End);
+
+    FIntPoint StartPos = GlobalToLocal( StartChunk, Start );
+    FIntPoint EndPos = GlobalToLocal( EndChunk, End );
+
+    FPathNode StartNode( StartChunk, StartChunk, StartPos );
+    FPathNode EndNode( EndChunk, EndChunk, EndPos );
+
+    // similar A*. check GetBestGate for detailed comments
+    TArray< TPair<float, FPathNode> > Frontier;
+    auto Predicate = []( const TPair<float, FPathNode>& A, const TPair<float, FPathNode>& B ){ return A.Key < B.Key; };
+    Frontier.Heapify( Predicate ); // don't mean anything if it's empty. context purpose.
+    Frontier.HeapPush(TPair<float, FPathNode>(0.f, StartNode), Predicate);
+
+    TMap<FIntPoint, float> CostMap; // CostMap for Chunk.
+    CostMap.Add( StartChunk, 0.f );
+
+    TMap<FPathNode, FPathNode> Came_From; // for gate graph. !! Same Position Node aren't same if headed chunk is different !!
+    
+    while( !Frontier.IsEmpty() )
+    {
+        UE_LOG(LogTemp, Warning, TEXT("ChunkLevel While"));
+
+        TPair< float, FPathNode > Current;
+        Frontier.HeapPop( Current, Predicate );
+        FPathNode CurrentNode = Current.Value;
+
+        float CostNow = CostMap[ CurrentNode.Next ];
+
+        if( CostNow >= INFLOAT )    // No Path Found ( INF is lowest cost )
+        { UE_LOG(LogTemp, Warning, TEXT("No ChunkLevel Path Found.")); return; } 
+
+        if( CurrentNode.Next == EndNode.Belong )  // if we met goal    
+        {
+            // TODO: check if goal is reachable!! 
+            
+            // .. do data passing.
+            TArray<FPathNode> ReversePath;
+            ReversePath.Add( EndNode );
+
+            FPathNode NodeNow = CurrentNode;
+            ReversePath.Add( NodeNow );
+
+            while( NodeNow != StartNode )
+            {
+                FPathNode* NodeFrom = Came_From.Find( NodeNow );
+                if( !NodeFrom )
+                { UE_LOG(LogTemp, Warning, TEXT("HighLevelPath Error")); return; }
+                NodeNow = *NodeFrom;
+                ReversePath.Add( NodeNow );
+            }
+
+            OutGates.SetNum( ReversePath.Num() );
+            for( int32 i = 0; i < ReversePath.Num(); i++ )
+            {
+                OutGates[i] = ReversePath[ ReversePath.Num() - 1 - i ];
+            }
+
+            return;
+        }
+
+        // traversing
+        TArray<FIntPoint> Neighbors;
+        GetNeighbors( CurrentNode.Next, Neighbors, true );
+        for( auto& Neighbor : Neighbors )   // for each neighbor
+        {
+            FPathNode Gate;
+            // we have to change pos to next chunk relative
+            FIntPoint NewPos = GlobalToLocal( CurrentNode.Next, ConvertToGlobal(CurrentNode.Belong, CurrentNode.Pos) );
+            float CostToGate = GetBestGate( CurrentNode.Next, Neighbor, NewPos, Gate ); 
+            if( CostToGate >= INFLOAT ) { continue; }   // No gate available
+            
+            float NewCost = CostNow + CostToGate;
+            float* OldCost = CostMap.Find( Neighbor );
+            if( !OldCost || *OldCost > NewCost )
+            {
+                CostMap.Add( Neighbor, NewCost );
+                Came_From.Add( Gate, CurrentNode );
+
+                float Priority = NewCost + Heuristic( ConvertToGlobal( Gate.Belong, Gate.Pos ), End );
+
+                UE_LOG(LogTemp, Display, TEXT("Priority: %f"), Priority);
+
+                // Solve same priority conflict (on diagonal gates) with direction priority.
+                Priority -= GetDirectionBias( Gate, End ) * 10;
+
+                //UE_LOG(LogTemp, Display, TEXT("Priority + bias: %f"), Priority);
+
+                Frontier.HeapPush( TPair<float, FPathNode>( Priority, Gate ), Predicate );
+            }
+        }
+
+    }   // end of while
+
+    UE_LOG(LogTemp, Warning, TEXT("ChunkLevel PathFinding Error"));
+    return;
 
 }
 
@@ -187,7 +287,7 @@ bool FPathFinder::IsPosInChunk( const FIntPoint& Pos )
 }
 
 // returns neighbors of a Pos. 3x3 grid.
-void FPathFinder::GetNeighbors( const FIntPoint& Pos, TArray<FIntPoint>& OutNeighbors )
+void FPathFinder::GetNeighbors( const FIntPoint& Pos, TArray<FIntPoint>& OutNeighbors, bool IsGlobal )
 {
 
     OutNeighbors.Empty();
@@ -196,8 +296,10 @@ void FPathFinder::GetNeighbors( const FIntPoint& Pos, TArray<FIntPoint>& OutNeig
     {
         for( int32 i = Pos.X - 1; i <= Pos.X + 1; i++ )
         {
-            if( FIntPoint( i,j ) == Pos || !IsPosInChunk( FIntPoint(i,j) ) ) 
+            if( FIntPoint( i,j ) == Pos ) 
             { continue; }; // ignore self and out of boundaries.
+            if( !IsGlobal && !IsPosInChunk( FIntPoint(i,j) ) )
+            { continue; }; // if not global, check if Pos is in Chunk
             OutNeighbors.Add( FIntPoint( i,j ) );
         }
     }
@@ -210,7 +312,7 @@ void FPathFinder::GetGoalSet( const FIntPoint& Chunk, const FIntPoint& NextChunk
 {
     OutGoalSet.Empty();
     FIntPoint Case = NextChunk - Chunk;
-    UE_LOG(LogTemp, Display, TEXT("Case : %s "), *Case.ToString());
+    // UE_LOG(LogTemp, Display, TEXT("Case : %s "), *Case.ToString());
     // Case value ( depends on NextChunk Location )
 	//(-1,1)	(0,1)	(1,1)
 	//(-1,0)	S		(1,0)
@@ -298,6 +400,7 @@ int32 FPathFinder::Heuristic( const FIntPoint& PosA, const FIntPoint& PosB )
     return GetUnitDistSquared( PosA, PosB );
 }
 
+// returns global FIntPoint grid Position
 FIntPoint FPathFinder::ConvertToGlobal( const FIntPoint& Chunk, const FIntPoint& Pos )
 {
     FIntPoint Offset = Chunk * RTref.VerticesPerChunk;
@@ -305,8 +408,35 @@ FIntPoint FPathFinder::ConvertToGlobal( const FIntPoint& Chunk, const FIntPoint&
     return Offset + Pos;
 }
 
+// returns Pos relative to Chunk
 FIntPoint FPathFinder::GlobalToLocal( const FIntPoint& Chunk, const FIntPoint& GlobalPos )
 {
     FIntPoint ChunkGlobalPos = Chunk * RTref.VerticesPerChunk;
     return GlobalPos - ChunkGlobalPos;
+}
+
+float FPathFinder::GetDirectionBias( const FPathNode& Gate, const FIntPoint& GlobalEnd )
+{
+    FIntPoint GlobalPos = ConvertToGlobal( Gate.Belong, Gate.Pos );
+    //TODO: slight vector angle priority for diagonal situations. (same point, same priority problem)
+    FVector2D ToGoal = FVector2D( GlobalEnd.X, GlobalEnd.Y ) - FVector2D( GlobalPos.X, GlobalPos.Y );
+    FVector2D ToNext = FVector2D( Gate.Next.X, Gate.Next.Y ) - FVector2D( Gate.Belong.X, Gate.Belong.Y );
+    if( ToGoal.IsNearlyZero() || ToNext.IsNearlyZero() ) { return 0.f; }    // error check.
+    ToGoal.Normalize();
+    ToNext.Normalize();
+
+    float DotResult = FVector2D::DotProduct(ToGoal, ToNext);
+    // Result is close to 1 if angle is small. -1 ~ 0 ~ 1
+    // 같은 방향 -> 1 에 가까움. 반대 방향 -> -1. 수직 방향 -> 0
+
+    return DotResult;
+}
+
+FIntPoint FPathFinder::GetChunk( const FIntPoint& GlobalPos )
+{
+    FIntPoint Chunk;
+    Chunk.X = FMath::FloorToInt32( float(GlobalPos.X) / float(RTref.VerticesPerChunk) );
+    Chunk.Y = FMath::FloorToInt32( float(GlobalPos.Y) / float(RTref.VerticesPerChunk) );
+
+    return Chunk;
 }
