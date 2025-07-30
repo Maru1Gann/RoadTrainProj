@@ -46,10 +46,9 @@ float FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray
         FIntPoint PosNow = Current.Value;
         float CostNow = CostMap[PosNow];
         if( CostNow >= INFLOAT )
-        {
-            UE_LOG(LogTemp, Warning, TEXT("Path Rebuilding Failed... How??"));
-            return CostNow;
-        }
+        { UE_LOG(LogTemp, Warning, TEXT("GetPath INF cost hit"));
+            return CostNow; }
+
         if( PosNow == End.Pos )
         {
             //.. do data passing
@@ -67,9 +66,7 @@ float FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray
             // reverse the ReversePath
             OutPath.SetNum( ReversePath.Num() );
             for( int32 i = 0; i < ReversePath.Num(); i++ )
-            {
-                OutPath[i] = ReversePath[ ReversePath.Num() - 1 - i];
-            }
+            { OutPath[i] = ReversePath[ ReversePath.Num() - 1 - i]; }
 
             return CostNow;
         }
@@ -81,18 +78,27 @@ float FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray
             float NewCost = CostNow + GetUnitDistSquared( PosNow, PosNext );
 
             // check slopes
-            if( GetSlopeSquared( End.Belong, PosNow, PosNext ) > RTref.Slope * RTref.Slope )
-            {
-                NewCost = INFLOAT;
-            }
+            float SlopeSqr = GetSlopeSquared( End.Belong, PosNow, PosNext );
+            if( SlopeSqr > RTref.MaxSlope * RTref.MaxSlope )
+            { NewCost = INFLOAT; }
 
             float* OldCost = CostMap.Find( PosNext );
             if( !OldCost || *OldCost > NewCost )
             {
                 CostMap.Add( PosNext, NewCost );
                 Came_From.Add( PosNext, PosNow );
-                
-                float Priority = NewCost + GetUnitDistSquared( PosNow, PosNext ); // use instead of heuristic()
+
+                float Heuristics = GetUnitDistSquared( PosNow, PosNext ); // Heuristic
+                float SlopePanelty = SlopeSqr * RTref.SlopePaneltyWeight; // Steepness Panelty
+
+                // we need to add direction panelty. we need position of last, now, next
+                float DirectionPanelty = 0.f;
+                FIntPoint* PosLast = Came_From.Find( PosNow );
+                if( PosLast ) // need to subtract, since -1 means opposite direction.
+                { DirectionPanelty -= GetDirectionBias( *PosLast, PosNow, PosNext ) * RTref.DirectionPaneltyWeight; }
+
+                float Priority = NewCost + Heuristics + SlopePanelty + DirectionPanelty;
+
                 Frontier.HeapPush( TPair<float, FIntPoint>( Priority, PosNext ), Predicate );
             }
         }
@@ -125,10 +131,35 @@ void FPathFinder::FindPathGates( const FIntPoint& Start, const FIntPoint& End, T
     CostMap.Add( StartChunk, 0.f );
 
     TMap<FPathNode, FPathNode> Came_From; // for gate graph. !! Same Position Node aren't same if headed chunk is different !!
-    
+
+    TArray<FIntPoint> AbortFlag;
+    GetNeighbors(EndChunk, AbortFlag, true);
+    AbortFlag.Add(EndChunk);
+    int32 AbortCheck = 0;
+
     while( !Frontier.IsEmpty() )
     {
         UE_LOG(LogTemp, Warning, TEXT("ChunkLevel While"));
+
+        // avoiding infinite loop ( not perfect )
+        if( AbortCheck >= 8 )
+        {
+            bool Abort = true;
+            for( auto& Elem : AbortFlag )
+            {
+                if( !CostMap.Contains( Elem ) ) 
+                { Abort = false; }
+            }
+
+            if( Abort ) // if all neighbors and goal chunk visiting attempted
+            { UE_LOG(LogTemp, Warning, TEXT("PathFinding Aborted. No path")); 
+                return; }
+
+            AbortCheck %= 8;
+        }
+        AbortCheck++;
+        // avoiding infinite loop ↑
+
 
         TPair< float, FPathNode > Current;
         Frontier.HeapPop( Current, Predicate );
@@ -137,12 +168,18 @@ void FPathFinder::FindPathGates( const FIntPoint& Start, const FIntPoint& End, T
         float CostNow = CostMap[ CurrentNode.Next ];
 
         if( CostNow >= INFLOAT )    // No Path Found ( INF is lowest cost )
-        { UE_LOG(LogTemp, Warning, TEXT("No ChunkLevel Path Found.")); return; } 
+        { UE_LOG(LogTemp, Warning, TEXT("Chunklevel Path INF hit")); 
+            return; } 
 
         if( CurrentNode.Next == EndNode.Belong )  // if we met goal    
         {
             // TODO: check if goal is reachable!! 
             
+            TArray<FIntPoint> TempPath;
+            float Validator = GetPath( CurrentNode, EndNode, TempPath );
+            if( Validator >= INFLOAT ) 
+            { CostMap.Add( EndChunk, INFLOAT ); continue; }
+
             // .. do data passing.
             TArray<FPathNode> ReversePath;
             ReversePath.Add( EndNode );
@@ -154,7 +191,8 @@ void FPathFinder::FindPathGates( const FIntPoint& Start, const FIntPoint& End, T
             {
                 FPathNode* NodeFrom = Came_From.Find( NodeNow );
                 if( !NodeFrom )
-                { UE_LOG(LogTemp, Warning, TEXT("HighLevelPath Error")); return; }
+                { UE_LOG(LogTemp, Warning, TEXT("ChunkLevel Path Error")); 
+                    return; }
                 NodeNow = *NodeFrom;
                 ReversePath.Add( NodeNow );
             }
@@ -176,11 +214,16 @@ void FPathFinder::FindPathGates( const FIntPoint& Start, const FIntPoint& End, T
             FPathNode Gate;
             // we have to change pos to next chunk relative
             FIntPoint NewPos = GlobalToLocal( CurrentNode.Next, ConvertToGlobal(CurrentNode.Belong, CurrentNode.Pos) );
-            float CostToGate = GetBestGate( CurrentNode.Next, Neighbor, NewPos, Gate ); 
-            if( CostToGate >= INFLOAT ) { continue; }   // No gate available
+            float CostToGate = GetBestGate( CurrentNode.Next, Neighbor, NewPos, Gate );
+
+            float* OldCost = CostMap.Find( Neighbor ); 
+            if( CostToGate >= INFLOAT ) // No gate available
+            { 
+                if( !OldCost ) { CostMap.Add( Neighbor, CostToGate ); }    // if never visited, make it INFLOAT
+                continue;
+            }   
             
             float NewCost = CostNow + CostToGate;
-            float* OldCost = CostMap.Find( Neighbor );
             if( !OldCost || *OldCost > NewCost )
             {
                 CostMap.Add( Neighbor, NewCost );
@@ -188,12 +231,8 @@ void FPathFinder::FindPathGates( const FIntPoint& Start, const FIntPoint& End, T
 
                 float Priority = NewCost + Heuristic( ConvertToGlobal( Gate.Belong, Gate.Pos ), End );
 
-                UE_LOG(LogTemp, Display, TEXT("Priority: %f"), Priority);
-
                 // Solve same priority conflict (on diagonal gates) with direction priority.
-                Priority -= GetDirectionBias( Gate, End ) * 10;
-
-                //UE_LOG(LogTemp, Display, TEXT("Priority + bias: %f"), Priority);
+                Priority -= GetChunkDirectionBias( Gate, End ) * 10;
 
                 Frontier.HeapPush( TPair<float, FPathNode>( Priority, Gate ), Predicate );
             }
@@ -201,7 +240,7 @@ void FPathFinder::FindPathGates( const FIntPoint& Start, const FIntPoint& End, T
 
     }   // end of while
 
-    UE_LOG(LogTemp, Warning, TEXT("ChunkLevel PathFinding Error"));
+    UE_LOG(LogTemp, Warning, TEXT("ChunkLevel while Error (No Path)"));
     return;
 
 }
@@ -227,10 +266,8 @@ float FPathFinder::GetBestGate( const FIntPoint& Chunk, const FIntPoint& NextChu
     TSet< FIntPoint > GoalSet;
     GetGoalSet(Chunk, NextChunk, GoalSet); // out param.
     if( GoalSet.IsEmpty() )
-    {
-        UE_LOG(LogTemp, Warning, TEXT("GoalSetEmpty"));
-        return INFLOAT;
-    }
+    { UE_LOG(LogTemp, Warning, TEXT("GoalSetEmpty"));
+        return INFLOAT; }
 
     while( !Frontier.IsEmpty() )
     {
@@ -254,16 +291,15 @@ float FPathFinder::GetBestGate( const FIntPoint& Chunk, const FIntPoint& NextChu
             float NewCost = CostNow + GetUnitDistSquared( PosNow, PosNext );
 
             // check slopes
-            if( GetSlopeSquared( Chunk, PosNow, PosNext ) > RTref.Slope * RTref.Slope )
-            {
-                NewCost = INFLOAT; // too steep
-            }
+            if( GetSlopeSquared( Chunk, PosNow, PosNext ) > RTref.MaxSlope * RTref.MaxSlope ) // too steep
+            { NewCost = INFLOAT; }
 
             float* OldCost = CostMap.Find( PosNext );
             if( !OldCost || *OldCost > NewCost )
             {
                 CostMap.Add( PosNext, NewCost );
-                float Priority = NewCost + Heuristic( ConvertToGlobal( Chunk, PosNext ), RTref.End ); // CHECK : direction not accounted!!
+                // CHECK : direction not accounted!! we can better performance 
+                float Priority = NewCost + Heuristic( ConvertToGlobal( Chunk, PosNext ), RTref.End );
 
                 Frontier.HeapPush(TPair<float, FIntPoint>( Priority, PosNext ), Predicate);
             }
@@ -403,7 +439,7 @@ int32 FPathFinder::Heuristic( const FIntPoint& PosA, const FIntPoint& PosB )
 // returns global FIntPoint grid Position
 FIntPoint FPathFinder::ConvertToGlobal( const FIntPoint& Chunk, const FIntPoint& Pos )
 {
-    FIntPoint Offset = Chunk * RTref.VerticesPerChunk;
+    FIntPoint Offset = Chunk * ( RTref.VerticesPerChunk - 1 );
 
     return Offset + Pos;
 }
@@ -411,11 +447,12 @@ FIntPoint FPathFinder::ConvertToGlobal( const FIntPoint& Chunk, const FIntPoint&
 // returns Pos relative to Chunk
 FIntPoint FPathFinder::GlobalToLocal( const FIntPoint& Chunk, const FIntPoint& GlobalPos )
 {
-    FIntPoint ChunkGlobalPos = Chunk * RTref.VerticesPerChunk;
+    FIntPoint ChunkGlobalPos = Chunk * ( RTref.VerticesPerChunk - 1 );
     return GlobalPos - ChunkGlobalPos;
 }
 
-float FPathFinder::GetDirectionBias( const FPathNode& Gate, const FIntPoint& GlobalEnd )
+// returns -1~1 Dot Product between Chunk level direction and Gate level direction.
+float FPathFinder::GetChunkDirectionBias( const FPathNode& Gate, const FIntPoint& GlobalEnd )
 {
     FIntPoint GlobalPos = ConvertToGlobal( Gate.Belong, Gate.Pos );
     //TODO: slight vector angle priority for diagonal situations. (same point, same priority problem)
@@ -435,8 +472,20 @@ float FPathFinder::GetDirectionBias( const FPathNode& Gate, const FIntPoint& Glo
 FIntPoint FPathFinder::GetChunk( const FIntPoint& GlobalPos )
 {
     FIntPoint Chunk;
-    Chunk.X = FMath::FloorToInt32( float(GlobalPos.X) / float(RTref.VerticesPerChunk) );
-    Chunk.Y = FMath::FloorToInt32( float(GlobalPos.Y) / float(RTref.VerticesPerChunk) );
+    Chunk.X = FMath::FloorToInt32( float(GlobalPos.X) / RTref.VerticesPerChunk );
+    Chunk.Y = FMath::FloorToInt32( float(GlobalPos.Y) / RTref.VerticesPerChunk );
 
     return Chunk;
+}
+
+// returns -1~1 dot product result between last - now , now - next vector.
+float FPathFinder::GetDirectionBias( const FIntPoint& PosLast, const FIntPoint& PosNow, const FIntPoint& PosNext )
+{
+    FVector2D LastToNow = FVector2D(PosNow.X, PosNow.Y) - FVector2D(PosLast.X, PosLast.Y);
+    FVector2D NowToNext = FVector2D(PosNext.X, PosNext.Y) - FVector2D(PosNow.X, PosNow.Y);
+    
+    LastToNow.Normalize();
+    NowToNext.Normalize();
+
+    return FVector2D::DotProduct( LastToNow, NowToNext ); // 1 = same direction. -1 = opposite.
 }

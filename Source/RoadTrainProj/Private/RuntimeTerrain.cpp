@@ -6,6 +6,7 @@
 #include "PathNode.h"
 
 #include "DrawDebugHelpers.h" // debug points
+#include "Kismet/KismetSystemLibrary.h" // debug points flush
 
 
 ARuntimeTerrain::ARuntimeTerrain()
@@ -30,6 +31,37 @@ void ARuntimeTerrain::BeginPlay()
 	
 	Super::BeginPlay();
 
+	
+}
+
+void ARuntimeTerrain::GenerateLandscape()
+{
+    for( auto& Elem: this->ChunkOrder )
+    {
+        if( Chunks.Contains(Elem) ) // if already exists.
+        {
+            continue;
+        }
+
+        RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+        GetStreamSet( Elem, StreamSet );  // OutStreamSet
+        AddChunk( Elem, StreamSet );
+    }
+    return;
+}
+
+void ARuntimeTerrain::RemoveLandscape()
+{
+    for( auto& Elem: this->Chunks )
+    {
+        RemoveChunk( Elem.Key );
+    }
+
+    return;
+}
+
+void ARuntimeTerrain::PathDebug()
+{
 	// Start and End Red debug point
 	DrawDebugPoint(
 		this->GetWorld(),
@@ -86,37 +118,12 @@ void ARuntimeTerrain::BeginPlay()
 
 		}
 	}
-	
 }
 
-void ARuntimeTerrain::GenerateLandscape()
+void ARuntimeTerrain::RemoveDebugPoints()
 {
-    for( auto& Elem: this->ChunkOrder )
-    {
-        if( Chunks.Contains(Elem) ) // if already exists.
-        {
-            continue;
-        }
-
-        RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-        GetStreamSet( Elem, StreamSet );  // OutStreamSet
-        AddChunk( Elem, StreamSet );
-    }
-    return;
+	UKismetSystemLibrary::FlushPersistentDebugLines( this->GetWorld() );
 }
-
-void ARuntimeTerrain::RemoveLandscape()
-{
-    for( auto& Elem: this->Chunks )
-    {
-        RemoveChunk( Elem.Key );
-    }
-
-    return;
-}
-
-
-
 
 // returns StreamSet for a Chunk
 void ARuntimeTerrain::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet)
@@ -365,24 +372,17 @@ FVector ARuntimeTerrain::ConvertTo3D( const FIntPoint& Location )
 float ARuntimeTerrain::GetHeight( const FVector2D& Location )
 {
     if( ShouldGenerateHeight == false )
-	{
-		return 0.0f;
-	}
+	{ return 0.0f; }
 	
     float height = 0.0f;
 	if(this->NoiseLayers.Num() <= 0)
-	{
-		return 0.0f;
-	}
+	{ return 0.0f; }
 
 	for ( int32 i = 0; i < NoiseLayers.Num(); i++)
 	{
 		float Frequency = NoiseLayers[i].Frequency;
-		if(Frequency == 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Perlin Noise frequency can't be 0"));
-			Frequency = 0.001;
-		}
+		if( FMath::IsNearlyZero( Frequency ) )
+		{ continue; }
 		float NoiseScale = 1.0f / Frequency;
 		float Amplitude = NoiseLayers[i].Amplitude;
 		float Offset = NoiseLayers[i].Offset;
@@ -529,3 +529,4 @@ void ARuntimeTerrain::GetTangents( const int32& VertexCount, const TArray<uint32
 
 	return;
 }
+

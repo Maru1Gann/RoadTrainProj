@@ -49,15 +49,23 @@ public:
     FIntPoint Start;    // global FIntPoint
     UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 2) )
     FIntPoint End;      // global
-    UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 3) )
-	float Slope = 30;
+    UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 3, ClampMin = "0.0", ClampMax = "100.0") )
+	float MaxSlope = 30;
+    UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "10.0") )
+    float SlopePaneltyWeight = 3.0f;
+    UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "1000.0") )
+    float DirectionPaneltyWeight = 500.0f;
     
 
     UFUNCTION( CallInEditor, Category = "Chunks" )
         void GenerateLandscape();
     UFUNCTION( CallInEditor, Category = "Chunks" )
         void RemoveLandscape();
-
+    UFUNCTION( CallInEditor, Category = "Chunks" )
+        void PathDebug();
+    UFUNCTION( CallInEditor, Category = "Chunks" )
+        void RemoveDebugPoints();
+    
     // --------------tools----------------
     FVector ConvertTo3D( const FVector2D& Location );
     FVector ConvertTo3D( const FIntPoint& Location );
@@ -84,7 +92,7 @@ private:
     void GetStreamSet( const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet );
     void AddChunk( const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet );
     void RemoveChunk( const FIntPoint& Chunk );
-
+    
 
 
     // tools_GetStreamset Parts

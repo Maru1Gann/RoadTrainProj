@@ -40,7 +40,7 @@ private:
     FIntPoint ConvertToGlobal( const FIntPoint& Chunk, const FIntPoint& Pos );
     FIntPoint GlobalToLocal( const FIntPoint& Chunk, const FIntPoint& GlobalPos );
 
-    float GetDirectionBias( const FPathNode& Gate, const FIntPoint& GlobalEnd );
+    float GetChunkDirectionBias( const FPathNode& Gate, const FIntPoint& GlobalEnd );
+    float GetDirectionBias( const FIntPoint& PosLast, const FIntPoint& PosNow, const FIntPoint& PosNext );
     FIntPoint GetChunk( const FIntPoint& GlobalPos );
-
 };
