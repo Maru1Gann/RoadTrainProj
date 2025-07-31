@@ -5,17 +5,29 @@
 #include "PathFinder2.h" // path finding
 #include "PathNode.h"
 
+#include "LandscapeManager.h"
+
 #include "DrawDebugHelpers.h" // debug points
-#include "Kismet/KismetSystemLibrary.h" // debug points flush
 
 
 ARuntimeTerrain::ARuntimeTerrain()
 {
     PrimaryActorTick.bCanEverTick = false; // disable tick
     RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root")); // cannot see actor in editor bug fix
-    
-	this->PathFinder = MakeShared<FPathFinder>( *this );
 }
+
+ARuntimeTerrain::ARuntimeTerrain( ALandscapeManager* pLM, UMaterialInterface* ChunkMaterial ) : ARuntimeTerrain()	// call basic constructor.
+{
+	this->VertexSpacing = pLM->VertexSpacing;
+	this->VerticesPerChunk = pLM->VerticesPerChunk;
+	this->ChunkRadius = pLM->ChunkRadius;
+	this->TextureSize = pLM->TextureSize;
+	this->ShouldGenerateHeight = pLM->ShouldGenerateHeight;
+	this->NoiseLayers = pLM->NoiseLayers;
+
+	this->ChunkMaterial = ChunkMaterial;
+}
+					
 
 void ARuntimeTerrain::OnConstruction( const FTransform& Transform )
 {
@@ -28,10 +40,7 @@ void ARuntimeTerrain::OnConstruction( const FTransform& Transform )
 
 void ARuntimeTerrain::BeginPlay()
 {
-	
 	Super::BeginPlay();
-
-	
 }
 
 void ARuntimeTerrain::GenerateLandscape()
@@ -58,71 +67,6 @@ void ARuntimeTerrain::RemoveLandscape()
     }
 
     return;
-}
-
-void ARuntimeTerrain::PathDebug()
-{
-	// Start and End Red debug point
-	DrawDebugPoint(
-		this->GetWorld(),
-		ConvertTo3D(Start),
-		30.f,
-		FColor::Red,
-		true
-	);
-	DrawDebugPoint(
-		this->GetWorld(),
-		ConvertTo3D(End),
-		30.f,
-		FColor::Red,
-		true
-	);
-
-	// High Level PathFinding Test. 
-	TArray<FPathNode> Gates;
-	PathFinder->FindPathGates(Start, End, Gates);
-
-	for( auto& Elem : Gates )
-	{
-		FVector Current = ConvertTo3D( PathFinder->ConvertToGlobal( Elem.Belong, Elem.Pos ) );
-
-        UE_LOG(LogTemp, Warning, 
-            TEXT("Current %s, %s, %s"), *Elem.Belong.ToString(), *Elem.Next.ToString(), *Elem.Pos.ToString());
-
-		DrawDebugPoint(
-			this->GetWorld(),
-			Current,
-			15.f,
-			FColor::Blue,
-			true
-		);
-	}
-
-	// Path Rebuilding Test
-
-	for( int i = 0; i < Gates.Num() - 1; i++)
-	{
-		TArray<FIntPoint> Path;
-		PathFinder->GetPath(Gates[i], Gates[i+1], Path);
-
-		for( auto& Elem: Path )
-		{
-			
-			DrawDebugPoint(
-				this->GetWorld(),
-				ConvertTo3D( PathFinder->ConvertToGlobal( Gates[i].Next, Elem ) ),
-				5.f,
-				FColor::Green,
-				true
-			);
-
-		}
-	}
-}
-
-void ARuntimeTerrain::RemoveDebugPoints()
-{
-	UKismetSystemLibrary::FlushPersistentDebugLines( this->GetWorld() );
 }
 
 // returns StreamSet for a Chunk
@@ -333,39 +277,6 @@ void ARuntimeTerrain::GetChunkOrder( const int32& ChunkRad, TArray<FIntPoint>& O
 	}
 
     return;
-}
-
-// returns PlayerLocation
-FVector2D ARuntimeTerrain::GetPlayerLocation()
-{
-    APlayerController* PlayerCon = GetWorld()->GetFirstPlayerController();
-    if( PlayerCon )
-    {
-        FVector Loc = PlayerCon->GetPawn()->GetActorLocation();
-        return FVector2D( Loc.X, Loc.Y );
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("PlayerController nullptr"));
-        return FVector2D(0,0);
-    }
-}
-
-// returns the Chunk where Location belongs.
-FIntPoint ARuntimeTerrain::GetChunk( const FVector2D& Location )
-{
-    return FIntPoint( FMath::FloorToInt32( Location.X / ChunkLength ), FMath::FloorToInt32( Location.Y / ChunkLength ) );
-}
-
-// returns Location with height
-FVector ARuntimeTerrain::ConvertTo3D( const FVector2D& Location )
-{
-    return FVector( Location.X, Location.Y, GetHeight(Location) );
-}
-// Converts Global FIntPoint to FVector with Height
-FVector ARuntimeTerrain::ConvertTo3D( const FIntPoint& Location )
-{
-	return ConvertTo3D( FVector2D( Location.X, Location.Y ) * VertexSpacing );
 }
 
 // returns height made with member noiselayers

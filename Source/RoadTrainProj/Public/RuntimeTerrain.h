@@ -11,6 +11,7 @@
 #include "RuntimeTerrain.generated.h"   // must be last
 
 struct FPerlinNoiseVariables;
+class ALandscapeManager;
 
 UCLASS()
 class ROADTRAINPROJ_API ARuntimeTerrain : public AActor
@@ -20,6 +21,8 @@ class ROADTRAINPROJ_API ARuntimeTerrain : public AActor
 
 public:
     ARuntimeTerrain();
+    ARuntimeTerrain( ALandscapeManager* pLM, UMaterialInterface* ChunkMaterial );
+
     virtual void OnConstruction(const FTransform& Transform) override;
 
 protected:
@@ -28,51 +31,31 @@ protected:
 
 public:
 
-    UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 1, ClampMin = "10.0", Step = "10.0", Units = "cm") )
+    UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 1, ClampMin = "10.0", Step = "10.0", Units = "cm") )
 	    float VertexSpacing = 1000.0f;
-	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 2, ClampMin = "2", Step = "2") )
+	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 2, ClampMin = "2", Step = "2") )
 	    int32 VerticesPerChunk = 128;   // at least two.
-	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 3, ClampMin = "0", Step = "1") )
+	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 3, ClampMin = "0", Step = "1") )
 	    int32 ChunkRadius = 1;
-	UPROPERTY( EditAnywhere, Category = "Chunks", meta = (DisplayPriority = 4, ClampMin = "0.0", Step = "10.0") )
+	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 4, ClampMin = "0.0", Step = "10.0") )
 	    float TextureSize = 300.0f;
 
-	UPROPERTY( EditAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 1) )
+	UPROPERTY( VisibleAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 1) )
 	    bool ShouldGenerateHeight = true;
-    UPROPERTY( EditAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 2) )
+    UPROPERTY( VisibleAnywhere, Category = "Chunks|Height", meta = (DisplayPriority = 2) )
 	    TArray<FPerlinNoiseVariables> NoiseLayers;
 
-    UPROPERTY( EditAnywhere, Category = "Chunks|Material")
+    UPROPERTY( VisibleAnywhere, Category = "Chunks|Material")
 	    UMaterialInterface* ChunkMaterial;
-
-    UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 1) )
-    FIntPoint Start;    // global FIntPoint
-    UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 2) )
-    FIntPoint End;      // global
-    UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 3, ClampMin = "0.0", ClampMax = "100.0") )
-	float MaxSlope = 30;
-    UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "10.0") )
-    float SlopePaneltyWeight = 3.0f;
-    UPROPERTY( EditAnywhere, Category = "Chunks|Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "1000.0") )
-    float DirectionPaneltyWeight = 500.0f;
     
-
     UFUNCTION( CallInEditor, Category = "Chunks" )
         void GenerateLandscape();
     UFUNCTION( CallInEditor, Category = "Chunks" )
         void RemoveLandscape();
-    UFUNCTION( CallInEditor, Category = "Chunks" )
-        void PathDebug();
-    UFUNCTION( CallInEditor, Category = "Chunks" )
-        void RemoveDebugPoints();
     
     // --------------tools----------------
-    FVector ConvertTo3D( const FVector2D& Location );
-    FVector ConvertTo3D( const FIntPoint& Location );
     float GetHeight( const FVector2D& Location );
     void GetChunkOrder( const int32& ChunkRadius, TArray<FIntPoint>& OutArray );
-    FVector2D GetPlayerLocation();
-    FIntPoint GetChunk( const FVector2D& Location );
     // --------------tools----------------
 
 private:
@@ -81,8 +64,6 @@ private:
 	    int32 ChunkCount = 0;
 	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 6) )
 	    float ChunkLength;
-
-    TSharedPtr<class FPathFinder> PathFinder;
 	
     TArray<FIntPoint> ChunkOrder;
     // TODO: maybe FCriticalSection Mutex
@@ -93,8 +74,6 @@ private:
     void AddChunk( const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet );
     void RemoveChunk( const FIntPoint& Chunk );
     
-
-
     // tools_GetStreamset Parts
     void GetVertices( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices );
     void GetUVs( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs );

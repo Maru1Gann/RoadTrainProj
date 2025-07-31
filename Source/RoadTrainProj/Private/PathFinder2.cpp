@@ -1,12 +1,12 @@
 
 #include "PathFinder2.h"
 #include "PathNode.h"
-#include "RuntimeTerrain.h"
+#include "LandscapeManager.h"
 
 #include <limits>
 const float INFLOAT = std::numeric_limits<float>::infinity(); // float INF for obstacles
 
-FPathFinder::FPathFinder( ARuntimeTerrain& RTref ) : RTref(RTref)
+FPathFinder::FPathFinder( ALandscapeManager* pLM ) : pLM( pLM )
 {
 
 }
@@ -79,7 +79,7 @@ float FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray
 
             // check slopes
             float SlopeSqr = GetSlopeSquared( End.Belong, PosNow, PosNext );
-            if( SlopeSqr > RTref.MaxSlope * RTref.MaxSlope )
+            if( SlopeSqr > pLM->MaxSlope * pLM->MaxSlope )
             { NewCost = INFLOAT; }
 
             float* OldCost = CostMap.Find( PosNext );
@@ -89,13 +89,13 @@ float FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray
                 Came_From.Add( PosNext, PosNow );
 
                 float Heuristics = GetUnitDistSquared( PosNow, PosNext ); // Heuristic
-                float SlopePanelty = SlopeSqr * RTref.SlopePaneltyWeight; // Steepness Panelty
+                float SlopePanelty = SlopeSqr * pLM->SlopePaneltyWeight; // Steepness Panelty
 
                 // we need to add direction panelty. we need position of last, now, next
                 float DirectionPanelty = 0.f;
                 FIntPoint* PosLast = Came_From.Find( PosNow );
                 if( PosLast ) // need to subtract, since -1 means opposite direction.
-                { DirectionPanelty -= GetDirectionBias( *PosLast, PosNow, PosNext ) * RTref.DirectionPaneltyWeight; }
+                { DirectionPanelty -= GetDirectionBias( *PosLast, PosNow, PosNext ) * pLM->DirectionPaneltyWeight; }
 
                 float Priority = NewCost + Heuristics + SlopePanelty + DirectionPanelty;
 
@@ -291,7 +291,7 @@ float FPathFinder::GetBestGate( const FIntPoint& Chunk, const FIntPoint& NextChu
             float NewCost = CostNow + GetUnitDistSquared( PosNow, PosNext );
 
             // check slopes
-            if( GetSlopeSquared( Chunk, PosNow, PosNext ) > RTref.MaxSlope * RTref.MaxSlope ) // too steep
+            if( GetSlopeSquared( Chunk, PosNow, PosNext ) > pLM->MaxSlope * pLM->MaxSlope ) // too steep
             { NewCost = INFLOAT; }
 
             float* OldCost = CostMap.Find( PosNext );
@@ -299,7 +299,7 @@ float FPathFinder::GetBestGate( const FIntPoint& Chunk, const FIntPoint& NextChu
             {
                 CostMap.Add( PosNext, NewCost );
                 // CHECK : direction not accounted!! we can better performance 
-                float Priority = NewCost + Heuristic( ConvertToGlobal( Chunk, PosNext ), RTref.End );
+                float Priority = NewCost + Heuristic( ConvertToGlobal( Chunk, PosNext ), pLM->End );
 
                 Frontier.HeapPush(TPair<float, FIntPoint>( Priority, PosNext ), Predicate);
             }
@@ -319,7 +319,7 @@ bool FPathFinder::IsPosInChunk( const FIntPoint& Pos, const int32& VertexCount )
 // simpler overload
 bool FPathFinder::IsPosInChunk( const FIntPoint& Pos )
 {
-    return IsPosInChunk( Pos, this->RTref.VerticesPerChunk );
+    return IsPosInChunk( Pos, this->pLM->VerticesPerChunk );
 }
 
 // returns neighbors of a Pos. 3x3 grid.
@@ -397,13 +397,15 @@ void FPathFinder::GetGoalSet( const FIntPoint& Chunk, const FIntPoint& NextChunk
 // simpler overload
 void FPathFinder::GetGoalSet( const FIntPoint& Chunk, const FIntPoint& NextChunk, TSet<FIntPoint>& OutGoalSet )
 {
-    GetGoalSet(Chunk, NextChunk, this->RTref.VerticesPerChunk, OutGoalSet );
+    GetGoalSet(Chunk, NextChunk, this->pLM->VerticesPerChunk, OutGoalSet );
     return;
 }
 
 // returns Unit Distance Squared
 int32 FPathFinder::GetUnitDistSquared( const FIntPoint& PosA, const FIntPoint PosB )
 {
+    // maybe we should take height into calculation.
+
     int32 DeltaX = PosB.X - PosA.X;
     int32 DeltaY = PosB.Y - PosA.Y;
 
@@ -416,8 +418,8 @@ float FPathFinder::GetSlopeSquared( const FIntPoint& Chunk, const FIntPoint& Pos
     // get tangent and multiply 100.
 
     float UnitBase = GetUnitDistSquared( PosA, PosB );
-    float UnitHeight = RTref.GetHeight( ConvertToVector2D( Chunk, PosA ) ) - RTref.GetHeight( ConvertToVector2D( Chunk, PosB ) );
-    UnitHeight /= RTref.VertexSpacing;// Convert to UnitHeight
+    float UnitHeight = pLM->GetHeight( ConvertToVector2D( Chunk, PosA ) ) - pLM->GetHeight( ConvertToVector2D( Chunk, PosB ) );
+    UnitHeight /= pLM->VertexSpacing;// Convert to UnitHeight
     UnitHeight *= UnitHeight; // square
     
     return ( UnitHeight / UnitBase ) * 100.f * 100.f ;
@@ -425,21 +427,23 @@ float FPathFinder::GetSlopeSquared( const FIntPoint& Chunk, const FIntPoint& Pos
 
 FVector2D FPathFinder::ConvertToVector2D( const FIntPoint& Chunk, const FIntPoint& Pos )
 {
-    float ChunkLength = RTref.VertexSpacing * ( RTref.VerticesPerChunk-1 );
+    float ChunkLength = pLM->VertexSpacing * ( pLM->VerticesPerChunk-1 );
     FVector2D Offset = FVector2D( Chunk.X, Chunk.Y ) * ChunkLength;
 
-    return FVector2D( Pos.X, Pos.Y ) * RTref.VertexSpacing + Offset;
+    return FVector2D( Pos.X, Pos.Y ) * pLM->VertexSpacing + Offset;
 }
 
 int32 FPathFinder::Heuristic( const FIntPoint& PosA, const FIntPoint& PosB )
 {
+    // maybe we should take height into calculation.
+
     return GetUnitDistSquared( PosA, PosB );
 }
 
 // returns global FIntPoint grid Position
 FIntPoint FPathFinder::ConvertToGlobal( const FIntPoint& Chunk, const FIntPoint& Pos )
 {
-    FIntPoint Offset = Chunk * ( RTref.VerticesPerChunk - 1 );
+    FIntPoint Offset = Chunk * ( pLM->VerticesPerChunk - 1 );
 
     return Offset + Pos;
 }
@@ -447,7 +451,7 @@ FIntPoint FPathFinder::ConvertToGlobal( const FIntPoint& Chunk, const FIntPoint&
 // returns Pos relative to Chunk
 FIntPoint FPathFinder::GlobalToLocal( const FIntPoint& Chunk, const FIntPoint& GlobalPos )
 {
-    FIntPoint ChunkGlobalPos = Chunk * ( RTref.VerticesPerChunk - 1 );
+    FIntPoint ChunkGlobalPos = Chunk * ( pLM->VerticesPerChunk - 1 );
     return GlobalPos - ChunkGlobalPos;
 }
 
@@ -472,8 +476,8 @@ float FPathFinder::GetChunkDirectionBias( const FPathNode& Gate, const FIntPoint
 FIntPoint FPathFinder::GetChunk( const FIntPoint& GlobalPos )
 {
     FIntPoint Chunk;
-    Chunk.X = FMath::FloorToInt32( float(GlobalPos.X) / RTref.VerticesPerChunk );
-    Chunk.Y = FMath::FloorToInt32( float(GlobalPos.Y) / RTref.VerticesPerChunk );
+    Chunk.X = FMath::FloorToInt32( float(GlobalPos.X) / pLM->VerticesPerChunk );
+    Chunk.Y = FMath::FloorToInt32( float(GlobalPos.Y) / pLM->VerticesPerChunk );
 
     return Chunk;
 }

@@ -4,21 +4,20 @@
 #include "CoreMinimal.h"
 
 struct FPathNode;
-class ARuntimeTerrain;
+class ALandscapeManager;
 
 class FPathFinder
 {
-    friend class ARuntimeTerrain; // debugging
 
 public:
-    FPathFinder( ARuntimeTerrain& RTref );
+    FPathFinder( ALandscapeManager* pLM );
     
     float GetPath( const FPathNode& Start, const FPathNode& End, TArray<FIntPoint>& OutPath );
     void FindPathGates( const FIntPoint& Start, const FIntPoint& End, TArray<FPathNode>& OutGates );
 
 private:
 
-    ARuntimeTerrain& RTref; // don't change member values!!
+    ALandscapeManager* pLM; // don't change member values!!
 
     float GetBestGate( const FIntPoint& Chunk, const FIntPoint& NextChunk, const FIntPoint& Pos, FPathNode& OutNode );
 
