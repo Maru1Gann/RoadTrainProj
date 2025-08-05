@@ -1,8 +1,8 @@
 
-#include "RuntimeTerrain.h"
+#include "ChunkBuilder.h"
 #include "PerlinNoiseVariables.h"   // NoiseLayers
 
-#include "PathFinder2.h" // path finding
+#include "PathFinder.h" // path finding
 #include "PathNode.h"
 
 #include "LandscapeManager.h"
@@ -10,13 +10,7 @@
 #include "DrawDebugHelpers.h" // debug points
 
 
-ARuntimeTerrain::ARuntimeTerrain()
-{
-    PrimaryActorTick.bCanEverTick = false; // disable tick
-    RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root")); // cannot see actor in editor bug fix
-}
-
-ARuntimeTerrain::ARuntimeTerrain( ALandscapeManager* pLM, UMaterialInterface* ChunkMaterial ) : ARuntimeTerrain()	// call basic constructor.
+FChunkBuilder::FChunkBuilder( ALandscapeManager* pLM, UMaterialInterface* ChunkMaterial )
 {
 	this->VertexSpacing = pLM->VertexSpacing;
 	this->VerticesPerChunk = pLM->VerticesPerChunk;
@@ -26,51 +20,13 @@ ARuntimeTerrain::ARuntimeTerrain( ALandscapeManager* pLM, UMaterialInterface* Ch
 	this->NoiseLayers = pLM->NoiseLayers;
 
 	this->ChunkMaterial = ChunkMaterial;
-}
-					
 
-void ARuntimeTerrain::OnConstruction( const FTransform& Transform )
-{
-    Super::OnConstruction(Transform);
-    
-    ChunkLength = VertexSpacing * ( VerticesPerChunk - 1 );
-    GetChunkOrder( this->ChunkRadius, this->ChunkOrder );
-
-}
-
-void ARuntimeTerrain::BeginPlay()
-{
-	Super::BeginPlay();
-}
-
-void ARuntimeTerrain::GenerateLandscape()
-{
-    for( auto& Elem: this->ChunkOrder )
-    {
-        if( Chunks.Contains(Elem) ) // if already exists.
-        {
-            continue;
-        }
-
-        RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-        GetStreamSet( Elem, StreamSet );  // OutStreamSet
-        AddChunk( Elem, StreamSet );
-    }
-    return;
-}
-
-void ARuntimeTerrain::RemoveLandscape()
-{
-    for( auto& Elem: this->Chunks )
-    {
-        RemoveChunk( Elem.Key );
-    }
-
-    return;
+	// need to be updated in LandscapeManager::OnConstruction()
+	ChunkLength = VertexSpacing * (VerticesPerChunk - 1); 
 }
 
 // returns StreamSet for a Chunk
-void ARuntimeTerrain::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet)
+void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet)
 {
 	// // Chunk location offset
 	// FVector2D Offset = FVector2D( Chunk.X , Chunk.Y ) * ChunkLength;
@@ -146,141 +102,81 @@ void ARuntimeTerrain::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealti
 }
 
 // Adds Chunk into the World
-void ARuntimeTerrain::AddChunk( const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet )
-{
-    if( GetWorld() == nullptr )
-	{
-		UE_LOG(LogTemp, Warning, TEXT("GetWorld() nullptr"));
-		return;
-	}
-
-	// Spawn chunk as Actor
-	ARealtimeMeshActor* RMA = GetWorld()->SpawnActor<ARealtimeMeshActor>();
-	if( RMA == nullptr )
-	{
-		UE_LOG(LogTemp, Warning, TEXT("RMA nullptr"));
-		return;
-	}
-
-	// Set Location
-	FVector Offset = FVector( Chunk.X , Chunk.Y, 0.0f ) * ChunkLength;
-	RMA->SetActorLocation(Offset);
-
-	URealtimeMeshComponent* pRMC = RMA->GetRealtimeMeshComponent();
-	if( pRMC == nullptr )
-	{
-		UE_LOG(LogTemp, Warning, TEXT("pRMC nullptr"));
-		return;
-	}
-
-	URealtimeMeshSimple* RealtimeMesh = RMA->GetRealtimeMeshComponent()->InitializeRealtimeMesh<URealtimeMeshSimple>();
-	if( RealtimeMesh == nullptr )
-	{
-		UE_LOG(LogTemp, Warning, TEXT("RealtimeMesh nullptr"));
-		return;
-	}
-
-	RealtimeMesh->SetupMaterialSlot(0, "PrimaryMaterial");
-	RealtimeMesh->UpdateLODConfig(0, FRealtimeMeshLODConfig(1.00f));
-
-	const FRealtimeMeshSectionGroupKey GroupKey = FRealtimeMeshSectionGroupKey::Create(0, 0);
-	const FRealtimeMeshSectionKey PolyGroup0SectionKey = FRealtimeMeshSectionKey::CreateForPolyGroup(GroupKey, 0);
-
-	// this generates the mesh (chunk)
-	RealtimeMesh->CreateSectionGroup(GroupKey, StreamSet);
-
-	// set it to static
-	RMA->GetRootComponent()->SetMobility(EComponentMobility::Static);
-
-    // set up material
-	if( ChunkMaterial != nullptr )
-	{
-		URealtimeMeshComponent* MeshComp = RMA->GetRealtimeMeshComponent();
-		MeshComp->SetMaterial( 0, ChunkMaterial );
-	}
-
-    // add it to status (member)
-	Chunks.Add(Chunk, RMA);
-
-	// update configuration.
-	RealtimeMesh->UpdateSectionConfig( PolyGroup0SectionKey, FRealtimeMeshSectionConfig(0), true );
-
-}
+//void FChunkBuilder::AddChunk( const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet )
+//{
+//    if( GetWorld() == nullptr )
+//	{
+//		UE_LOG(LogTemp, Warning, TEXT("GetWorld() nullptr"));
+//		return;
+//	}
+//
+//	// Spawn chunk as Actor
+//	ARealtimeMeshActor* RMA = GetWorld()->SpawnActor<ARealtimeMeshActor>();
+//	if( RMA == nullptr )
+//	{
+//		UE_LOG(LogTemp, Warning, TEXT("RMA nullptr"));
+//		return;
+//	}
+//
+//	// Set Location
+//	FVector Offset = FVector( Chunk.X , Chunk.Y, 0.0f ) * ChunkLength;
+//	RMA->SetActorLocation(Offset);
+//
+//	URealtimeMeshComponent* pRMC = RMA->GetRealtimeMeshComponent();
+//	if( pRMC == nullptr )
+//	{
+//		UE_LOG(LogTemp, Warning, TEXT("pRMC nullptr"));
+//		return;
+//	}
+//
+//	URealtimeMeshSimple* RealtimeMesh = RMA->GetRealtimeMeshComponent()->InitializeRealtimeMesh<URealtimeMeshSimple>();
+//	if( RealtimeMesh == nullptr )
+//	{
+//		UE_LOG(LogTemp, Warning, TEXT("RealtimeMesh nullptr"));
+//		return;
+//	}
+//
+//	RealtimeMesh->SetupMaterialSlot(0, "PrimaryMaterial");
+//	RealtimeMesh->UpdateLODConfig(0, FRealtimeMeshLODConfig(1.00f));
+//
+//	const FRealtimeMeshSectionGroupKey GroupKey = FRealtimeMeshSectionGroupKey::Create(0, 0);
+//	const FRealtimeMeshSectionKey PolyGroup0SectionKey = FRealtimeMeshSectionKey::CreateForPolyGroup(GroupKey, 0);
+//
+//	// this generates the mesh (chunk)
+//	RealtimeMesh->CreateSectionGroup(GroupKey, StreamSet);
+//
+//	// set it to static
+//	RMA->GetRootComponent()->SetMobility(EComponentMobility::Static);
+//
+//    // set up material
+//	if( ChunkMaterial != nullptr )
+//	{
+//		URealtimeMeshComponent* MeshComp = RMA->GetRealtimeMeshComponent();
+//		MeshComp->SetMaterial( 0, ChunkMaterial );
+//	}
+//
+//    // add it to status (member)
+//	Chunks.Add(Chunk, RMA);
+//
+//	// update configuration.
+//	RealtimeMesh->UpdateSectionConfig( PolyGroup0SectionKey, FRealtimeMeshSectionConfig(0), true );
+//
+//}
 
 // Removes Chunk in the world
-void ARuntimeTerrain::RemoveChunk( const FIntPoint& Chunk )
-{
-    if(	ARealtimeMeshActor** pRMA = Chunks.Find(Chunk) )
-	{
-		(*pRMA)->Destroy();
-		Chunks.Remove(Chunk);
-	}
-	return;
-}
+//void FChunkBuilder::RemoveChunk( const FIntPoint& Chunk )
+//{
+//    if(	ARealtimeMeshActor** pRMA = Chunks.Find(Chunk) )
+//	{
+//		(*pRMA)->Destroy();
+//		Chunks.Remove(Chunk);
+//	}
+//	return;
+//}
 
-
-
-// Returns 2d index of whirl. Used for chunk generation from closest point.
-// Should be called only once in OnConstruction()
-void ARuntimeTerrain::GetChunkOrder( const int32& ChunkRad, TArray<FIntPoint>& OutArray )
-{
-    OutArray.Empty();
-    OutArray.SetNum( ( ChunkRad*2 + 1 ) * ( ChunkRad*2 + 1 ) );
-
-    // we make square with chunks
-	// from the start point, we make it like a whirl
-
-	/* example
-		20	19	18	17	16
-		21	6	5	4	15
-		22	7	0	3	14
-		23	8	1	2	13
-		24	9	10	11	12
-		25	..
-
-		x+ : right
-		y+ : down
-	*/
-
-    FIntPoint Pos = FIntPoint(0,0);
-	int32 Index = 0;
-	OutArray[Index++] = Pos;
-	int32 LocalStep = 2;
-	while( Index < OutArray.Num() )
-	{
-		// one step down
-		Pos.Y++;
-		OutArray[Index++] = Pos;
-
-		for( int32 i = 1; i<LocalStep; i++ )
-		{
-			Pos.X++;
-			OutArray[Index++] = Pos;
-		}
-		for( int32 i = 0; i<LocalStep; i++)
-		{
-			Pos.Y--;
-			OutArray[Index++] = Pos;
-		}
-		for (int32 i = 0; i<LocalStep; i++)
-		{
-			Pos.X--;
-			OutArray[Index++] = Pos;
-		}
-		for (int32 i = 0; i<LocalStep; i++)
-		{
-			Pos.Y++;
-			OutArray[Index++] = Pos;
-		}
-
-		LocalStep += 2;
-	}
-
-    return;
-}
 
 // returns height made with member noiselayers
-float ARuntimeTerrain::GetHeight( const FVector2D& Location )
+float FChunkBuilder::GetHeight( const FVector2D& Location )
 {
     if( ShouldGenerateHeight == false )
 	{ return 0.0f; }
@@ -305,7 +201,7 @@ float ARuntimeTerrain::GetHeight( const FVector2D& Location )
 }
 
 // returns Vertices for Streamset.
-void ARuntimeTerrain::GetVertices(const FIntPoint& Chunk, const int32 & StartIndex, const int32 & EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices)
+void FChunkBuilder::GetVertices(const FIntPoint& Chunk, const int32 & StartIndex, const int32 & EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices)
 {
 
 	OutVertices.Empty();
@@ -329,7 +225,7 @@ void ARuntimeTerrain::GetVertices(const FIntPoint& Chunk, const int32 & StartInd
 }
 
 // returns UVs for StreamSet
-void ARuntimeTerrain::GetUVs(const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs)
+void FChunkBuilder::GetUVs(const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs)
 {
 	
 	OutUVs.Empty();
@@ -352,7 +248,7 @@ void ARuntimeTerrain::GetUVs(const FIntPoint& Chunk, const int32& StartIndex, co
 }
 
 // returns Triangle indices for StreamSet
-void ARuntimeTerrain::GetTriangles(const int32& VertexCount, TArray<uint32>& OutTriangles)
+void FChunkBuilder::GetTriangles(const int32& VertexCount, TArray<uint32>& OutTriangles)
 {
 	OutTriangles.Empty();
 
@@ -375,7 +271,7 @@ void ARuntimeTerrain::GetTriangles(const int32& VertexCount, TArray<uint32>& Out
 }
 
 // returns Small Tangents and Normals that are continuous along chunks.
-void ARuntimeTerrain::GetTangents( const int32& VertexCount, const TArray<uint32>& BigTriangles, const TArray<FVector3f>& BigVertices, TArray<FVector3f>& OutTangents, TArray<FVector3f>& OutNormals )
+void FChunkBuilder::GetTangents( const int32& VertexCount, const TArray<uint32>& BigTriangles, const TArray<FVector3f>& BigVertices, TArray<FVector3f>& OutTangents, TArray<FVector3f>& OutNormals )
 {
 
 	int32 RowLength = VertexCount + 2;

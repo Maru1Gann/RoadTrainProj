@@ -2,32 +2,19 @@
 #pragma once
 
 #include "CoreMinimal.h"                // always needed
-#include "GameFramework/Actor.h"        // Inherits Actor 
 
 #include "RealtimeMeshSimple.h"         // RealtimeMesh namespace
-#include "RealtimeMeshActor.h"          // AReltimeMeshActor
 #include "Mesh/RealtimeMeshAlgo.h"      // RealtimeMeshAlgo
-
-#include "RuntimeTerrain.generated.h"   // must be last
 
 struct FPerlinNoiseVariables;
 class ALandscapeManager;
 
-UCLASS()
-class ROADTRAINPROJ_API ARuntimeTerrain : public AActor
+class FChunkBuilder
 {
-    GENERATED_BODY()
 
 
 public:
-    ARuntimeTerrain();
-    ARuntimeTerrain( ALandscapeManager* pLM, UMaterialInterface* ChunkMaterial );
-
-    virtual void OnConstruction(const FTransform& Transform) override;
-
-protected:
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
+    FChunkBuilder( ALandscapeManager* pLM, UMaterialInterface* ChunkMaterial );
 
 public:
 
@@ -48,15 +35,9 @@ public:
     UPROPERTY( VisibleAnywhere, Category = "Chunks|Material")
 	    UMaterialInterface* ChunkMaterial;
     
-    UFUNCTION( CallInEditor, Category = "Chunks" )
-        void GenerateLandscape();
-    UFUNCTION( CallInEditor, Category = "Chunks" )
-        void RemoveLandscape();
-    
-    // --------------tools----------------
+
+    void GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
     float GetHeight( const FVector2D& Location );
-    void GetChunkOrder( const int32& ChunkRadius, TArray<FIntPoint>& OutArray );
-    // --------------tools----------------
 
 private:
 	// for debugging & reusing purposes, shown on editor details pannel
@@ -65,14 +46,6 @@ private:
 	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 6) )
 	    float ChunkLength;
 	
-    TArray<FIntPoint> ChunkOrder;
-    // TODO: maybe FCriticalSection Mutex
-    TMap<FIntPoint, ARealtimeMeshActor*> Chunks;    // Store all the chunks HERE
-
-
-    void GetStreamSet( const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet );
-    void AddChunk( const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet );
-    void RemoveChunk( const FIntPoint& Chunk );
     
     // tools_GetStreamset Parts
     void GetVertices( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices );

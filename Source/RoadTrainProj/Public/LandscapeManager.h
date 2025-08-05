@@ -3,10 +3,17 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 
+#include "RealtimeMeshSimple.h"         // RealtimeMesh namespace
+#include "RealtimeMeshActor.h"          // AReltimeMeshActor
+#include "Mesh/RealtimeMeshAlgo.h"      // RealtimeMeshAlgo
+
+#include "PathNode.h"
+#include "PathFinder.h"
+#include "ChunkBuilder.h"
+
 #include "LandscapeManager.generated.h"
 
-class ARuntimeTerrain;
-class FPathFinder;
+
 struct FPerlinNoiseVariables;
 
 UCLASS()
@@ -17,13 +24,13 @@ class ROADTRAINPROJ_API ALandscapeManager : public AActor
 public:
     ALandscapeManager();
     
-    //virtual void OnConstruction(const FTransform &Transform) override;
+    virtual void OnConstruction(const FTransform &Transform) override;
 	// Called every frame
-	// virtual void Tick(float DeltaTime) override;
+	virtual void Tick(float DeltaTime) override;
 
 protected:
 	// Called when the game starts or when spawned
-	// virtual void BeginPlay() override;
+	virtual void BeginPlay() override;
 
 public:
     // --------------Vars for Terrain Building------------------
@@ -42,37 +49,41 @@ public:
 	    TArray<FPerlinNoiseVariables> NoiseLayers;
 
     UPROPERTY( EditAnywhere, Category = "Terrain|Material", meta = (DisplayPriority = 1) )
-        UMaterialInterface* Material_Large;
-    UPROPERTY( EditAnywhere, Category = "Terrain|Material", meta = (DisplayPriority = 2) )
-        UMaterialInterface* Material_Medium;
-    UPROPERTY( EditAnywhere, Category = "Terrain|Material", meta = (DisplayPriority = 3) )
-        UMaterialInterface* Material_Small;
+    UMaterialInterface* Material;
 
     // ----------------Vars for PathFinding--------------------
     UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 1) )
-    FIntPoint Start;    // global FIntPoint
+        FIntPoint Start;    // global FIntPoint
     UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 2) )
-    FIntPoint End;      // global
+        FIntPoint End;      // global
     UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 3, ClampMin = "0.0", ClampMax = "100.0") )
-	float MaxSlope = 30;
+	    float MaxSlope = 30;
     UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "10.0") )
-    float SlopePaneltyWeight = 3.0f;
+        float SlopePaneltyWeight = 3.0f;
     UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "1000.0") )
-    float DirectionPaneltyWeight = 500.0f;
+        float DirectionPaneltyWeight = 500.0f;
 
-    float GetHeight( const FVector2D& Location );
+    UFUNCTION(CallInEditor, Category = "Terrain")
+        void GenerateLandscape();
+    UFUNCTION(CallInEditor, Category = "Terrain")
+        void RemoveLandscape();
+
+    float GetHeight(const FVector2D& Location);
+    void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
+    void RemoveChunk(const FIntPoint& Chunk);
 
 private:
 
-    // keep 3 layers of terrain.
-    UPROPERTY( VisibleAnywhere, Category = "Terrain", meta = (DisplayPriority = 5 ))
-    ARuntimeTerrain* Terrain_Large;
-    UPROPERTY( VisibleAnywhere, Category = "Terrain", meta = (DisplayPriority = 6 ))
-    ARuntimeTerrain* Terrain_Medium;
-    UPROPERTY( VisibleAnywhere, Category = "Terrain", meta = (DisplayPriority = 7 ))
-    ARuntimeTerrain* Terrain_Small;
+    std::unique_ptr<FChunkBuilder> ChunkBuilder;
+    TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
 
-    // Pathfinder
-    FPathFinder* PathFinder;
+    std::unique_ptr<FPathFinder> PathFinder;
+    TArray<FPathNode> PathNodes;
+
+
+    TArray<FIntPoint> ChunkOrder;
+
+    // tools
+    void GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& OutArray);
 
 };

@@ -8,8 +8,8 @@
 struct FPathNode
 {
     
-    FPathNode(){}
-    FPathNode( const FIntPoint& Belong, const FIntPoint& Next, const FIntPoint& Pos ) : Belong(Belong), Next(Next), Pos(Pos) {};
+    FPathNode() {}
+    FPathNode( const FIntPoint& Belong, const FIntPoint& Next, const FIntPoint& Pos ) : Belong(Belong), Next(Next), Pos(Pos) {}
 
     FIntPoint Belong;   // chunk it belongs
     FIntPoint Next;     // chunk it's headed ( if it is gate )
