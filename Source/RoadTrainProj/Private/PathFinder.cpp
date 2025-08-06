@@ -94,8 +94,8 @@ float FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray
                 // we need to add direction panelty. we need position of last, now, next
                 float DirectionPanelty = 0.f;
                 FIntPoint* PosLast = Came_From.Find( PosNow );
-                if( PosLast ) // need to subtract, since -1 means opposite direction.
-                { DirectionPanelty -= GetDirectionBias( *PosLast, PosNow, PosNext ) * pLM->DirectionPaneltyWeight; }
+                if( PosLast ) // -1 means opposite direction. -> substract from 1 -> if close to opposite, panelty.
+                { DirectionPanelty += (1 - GetDirectionBias( *PosLast, PosNow, PosNext )) * pLM->DirectionPaneltyWeight; }
 
                 float Priority = NewCost + Heuristics + SlopePanelty + DirectionPanelty;
 
@@ -139,7 +139,7 @@ void FPathFinder::FindPathGates( const FIntPoint& Start, const FIntPoint& End, T
 
     while( !Frontier.IsEmpty() )
     {
-        UE_LOG(LogTemp, Warning, TEXT("ChunkLevel While"));
+        //UE_LOG(LogTemp, Warning, TEXT("ChunkLevel While"));
 
         // avoiding infinite loop ( not perfect )
         if( AbortCheck >= 8 )
@@ -199,10 +199,9 @@ void FPathFinder::FindPathGates( const FIntPoint& Start, const FIntPoint& End, T
 
             OutGates.SetNum( ReversePath.Num() );
             for( int32 i = 0; i < ReversePath.Num(); i++ )
-            {
-                OutGates[i] = ReversePath[ ReversePath.Num() - 1 - i ];
-            }
+            { OutGates[i] = ReversePath[ ReversePath.Num() - 1 - i ]; }
 
+            UE_LOG(LogTemp, Display, TEXT("FindPathGates success"));
             return;
         }
 

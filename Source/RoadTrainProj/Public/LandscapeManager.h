@@ -67,6 +67,8 @@ public:
         void GenerateLandscape();
     UFUNCTION(CallInEditor, Category = "Terrain")
         void RemoveLandscape();
+    UFUNCTION(CallInEditor, Category = "Terrain")
+        void Debug();
 
     float GetHeight(const FVector2D& Location);
     void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
@@ -76,6 +78,7 @@ private:
 
     std::unique_ptr<FChunkBuilder> ChunkBuilder;
     TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
+    float ChunkLength;
 
     std::unique_ptr<FPathFinder> PathFinder;
     TArray<FPathNode> PathNodes;
@@ -85,5 +88,8 @@ private:
 
     // tools
     void GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& OutArray);
+    FVector GetNodeVector(const FPathNode& Node);
+
+    void DrawPathDebugPoints(const FIntPoint& Chunk, const TArray<FIntPoint>& Path);
 
 };

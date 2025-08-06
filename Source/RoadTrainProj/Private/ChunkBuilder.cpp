@@ -28,9 +28,6 @@ FChunkBuilder::FChunkBuilder( ALandscapeManager* pLM, UMaterialInterface* ChunkM
 // returns StreamSet for a Chunk
 void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet)
 {
-	// // Chunk location offset
-	// FVector2D Offset = FVector2D( Chunk.X , Chunk.Y ) * ChunkLength;
-	
 	// scale UV based on vetex spacing
 	float UVScale = VertexSpacing / TextureSize;
 
@@ -101,78 +98,81 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtime
 
 }
 
-// Adds Chunk into the World
-//void FChunkBuilder::AddChunk( const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet )
-//{
-//    if( GetWorld() == nullptr )
-//	{
-//		UE_LOG(LogTemp, Warning, TEXT("GetWorld() nullptr"));
-//		return;
-//	}
-//
-//	// Spawn chunk as Actor
-//	ARealtimeMeshActor* RMA = GetWorld()->SpawnActor<ARealtimeMeshActor>();
-//	if( RMA == nullptr )
-//	{
-//		UE_LOG(LogTemp, Warning, TEXT("RMA nullptr"));
-//		return;
-//	}
-//
-//	// Set Location
-//	FVector Offset = FVector( Chunk.X , Chunk.Y, 0.0f ) * ChunkLength;
-//	RMA->SetActorLocation(Offset);
-//
-//	URealtimeMeshComponent* pRMC = RMA->GetRealtimeMeshComponent();
-//	if( pRMC == nullptr )
-//	{
-//		UE_LOG(LogTemp, Warning, TEXT("pRMC nullptr"));
-//		return;
-//	}
-//
-//	URealtimeMeshSimple* RealtimeMesh = RMA->GetRealtimeMeshComponent()->InitializeRealtimeMesh<URealtimeMeshSimple>();
-//	if( RealtimeMesh == nullptr )
-//	{
-//		UE_LOG(LogTemp, Warning, TEXT("RealtimeMesh nullptr"));
-//		return;
-//	}
-//
-//	RealtimeMesh->SetupMaterialSlot(0, "PrimaryMaterial");
-//	RealtimeMesh->UpdateLODConfig(0, FRealtimeMeshLODConfig(1.00f));
-//
-//	const FRealtimeMeshSectionGroupKey GroupKey = FRealtimeMeshSectionGroupKey::Create(0, 0);
-//	const FRealtimeMeshSectionKey PolyGroup0SectionKey = FRealtimeMeshSectionKey::CreateForPolyGroup(GroupKey, 0);
-//
-//	// this generates the mesh (chunk)
-//	RealtimeMesh->CreateSectionGroup(GroupKey, StreamSet);
-//
-//	// set it to static
-//	RMA->GetRootComponent()->SetMobility(EComponentMobility::Static);
-//
-//    // set up material
-//	if( ChunkMaterial != nullptr )
-//	{
-//		URealtimeMeshComponent* MeshComp = RMA->GetRealtimeMeshComponent();
-//		MeshComp->SetMaterial( 0, ChunkMaterial );
-//	}
-//
-//    // add it to status (member)
-//	Chunks.Add(Chunk, RMA);
-//
-//	// update configuration.
-//	RealtimeMesh->UpdateSectionConfig( PolyGroup0SectionKey, FRealtimeMeshSectionConfig(0), true );
-//
-//}
+// returns streamset for chunk. height adjustment for road included.
+void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, const TArray<FIntPoint>& Path, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet)
+{
+	// scale UV based on vetex spacing
+	float UVScale = VertexSpacing / TextureSize;
 
-// Removes Chunk in the world
-//void FChunkBuilder::RemoveChunk( const FIntPoint& Chunk )
-//{
-//    if(	ARealtimeMeshActor** pRMA = Chunks.Find(Chunk) )
-//	{
-//		(*pRMA)->Destroy();
-//		Chunks.Remove(Chunk);
-//	}
-//	return;
-//}
+	// actual data to use
+	TArray<FVector3f> Vertices, Tangents, Normals;
+	TArray<uint32> Triangles;
+	TArray<FVector2DHalf> UVs;
+
+	GetVertices(Chunk, 0, VerticesPerChunk, VertexSpacing,
+		Vertices); // this line for OutParam.
+
+	FlattenPath(Chunk, Path, 
+		Vertices); // Flattening path. Overloaded function for this. TODO: do this on Big Verts, too.
+
+	GetUVs(Chunk, 0, VerticesPerChunk, UVScale,
+		UVs);
+
+	GetTriangles(VerticesPerChunk,
+		Triangles);
+
+	Tangents.SetNum(Vertices.Num());
+	Normals.SetNum(Vertices.Num());
+
+	// Big data for uv and normal continue on different chunks
+	TArray<FVector3f> BigVertices;
+	TArray<uint32> BigTriangles;
+
+	GetBigVertices(Chunk, Vertices, 
+		BigVertices);
+	GetTriangles(VerticesPerChunk + 2,
+		BigTriangles);
+
+	// Normals and Tangents made out of Big datas.
+	GetTangents(VerticesPerChunk, BigTriangles, BigVertices,
+		Tangents, Normals);
+
+
+	// Datas into StreamSet( class Member Var ) RMC syntax
+	RealtimeMesh::TRealtimeMeshBuilderLocal<uint32, FPackedNormal, FVector2DHalf, 1> Builder(OutStreamSet);
+	Builder.EnableTangents();
+	Builder.EnableTexCoords();
+	Builder.EnableColors();
+	Builder.EnablePolyGroups();
+
+	for (int32 i = 0; i < Vertices.Num(); i++)
+	{
+		Builder.AddVertex(Vertices[i])
+			.SetNormalAndTangent(Normals[i], Tangents[i])
+			.SetColor(FColor::White)
+			.SetTexCoord(UVs[i]);
+	}
+
+	for (int32 i = 0; i < Triangles.Num(); i += 6)
+	{
+		Builder.AddTriangle(
+			Triangles[i],
+			Triangles[i + 1],
+			Triangles[i + 2],
+			0
+		);
+
+		Builder.AddTriangle(
+			Triangles[i + 3],
+			Triangles[i + 4],
+			Triangles[i + 5],
+			0
+		);
+	}
+
+	return;
+
+}
 
 
 // returns height made with member noiselayers
@@ -214,9 +214,7 @@ void FChunkBuilder::GetVertices(const FIntPoint& Chunk, const int32 & StartIndex
 		{
 			FVector3f Vertex = FVector3f(iX, iY, 0.0f) * VertexSpace; 		// VertexSpacing & VertexCount may vary later. (LoD)
 			if( this->ShouldGenerateHeight )
-			{
-				Vertex.Z = GetHeight( FVector2D( Vertex.X, Vertex.Y ) +  Offset );
-			}
+			{ Vertex.Z = GetHeight( FVector2D( Vertex.X, Vertex.Y ) +  Offset ); }
 			OutVertices.Add( Vertex );
 		}
 	}
@@ -224,6 +222,28 @@ void FChunkBuilder::GetVertices(const FIntPoint& Chunk, const int32 & StartIndex
 	return;
 }
 
+// flattens landscape for road
+void FChunkBuilder::FlattenPath(const FIntPoint& Chunk, const TArray<FIntPoint>& Path, TArray<FVector3f>& OutVertices)
+{
+	TSet<FIntPoint> PathSet;
+	for (auto& Elem : Path)
+	{ PathSet.Emplace(Elem); }
+
+	for (int32 i = 1; i < Path.Num(); i++) // for all path.
+	{
+		FIntPoint Case = Path[i-1] - Path[i];
+		TSet<FIntPoint> Set;
+		GetFlattenSet(Case, Set);
+		float RoadHeight = OutVertices[GetIndex(Path[i])].Z;
+		for (auto& Elem : Set) // for all FlattenSet
+		{ 
+			FIntPoint Pos = Elem + Path[i];
+			// if it's not in boundary of chunk or if not a path. (Shouldn't affect the height of road itself)
+			if ( IsIndexInchunk(Pos) && !PathSet.Contains(Pos) ) 
+			{ OutVertices[GetIndex(Pos)].Z = RoadHeight; }
+		}
+	}
+}
 // returns UVs for StreamSet
 void FChunkBuilder::GetUVs(const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs)
 {
@@ -337,3 +357,70 @@ void FChunkBuilder::GetTangents( const int32& VertexCount, const TArray<uint32>&
 	return;
 }
 
+int32 FChunkBuilder::GetIndex(const int32& VertexCount, const FIntPoint& Pos)
+{
+	return Pos.Y * VertexCount + Pos.X;
+}
+
+int32 FChunkBuilder::GetIndex(const FIntPoint& Pos)
+{
+	return GetIndex(VerticesPerChunk, Pos);
+}
+
+void FChunkBuilder::GetFlattenSet(const FIntPoint& Case, TSet<FIntPoint>& OutSet)
+{
+	if (Case == FIntPoint(1, 0) || Case == FIntPoint(-1,0) )
+	{
+		OutSet.Add(FIntPoint(0, -1));
+		OutSet.Add(FIntPoint(0, 1));
+	}
+	if (Case == FIntPoint(0, 1) || Case == FIntPoint(0, -1))
+	{
+		OutSet.Add(FIntPoint(1, 0));
+		OutSet.Add(FIntPoint(-1, 0));
+	}
+	if (Case == FIntPoint(1, 1) || Case == FIntPoint(-1, -1) || Case == FIntPoint(1, -1) || Case == FIntPoint(-1, 1)) // diagonal
+	{
+		OutSet.Add(FIntPoint(1, 0));
+		OutSet.Add(FIntPoint(-1, 0));
+		OutSet.Add(FIntPoint(0, -1));
+		OutSet.Add(FIntPoint(0, 1));
+
+		// diagonal set.
+		OutSet.Add(FIntPoint(1, 1));
+		OutSet.Add(FIntPoint(-1, 1));
+		OutSet.Add(FIntPoint(-1, -1));
+		OutSet.Add(FIntPoint(1, -1));
+	}
+
+	return;
+}
+
+// this returns one vertex bigger square for normal calculation.
+void FChunkBuilder::GetBigVertices(const FIntPoint& Chunk, const TArray<FVector3f>& SmallVertices, TArray<FVector3f>& OutVertices)
+{
+	OutVertices.Empty();
+	FVector2D Offset = FVector2D(Chunk.X, Chunk.Y) * ChunkLength;
+	
+	for (int32 i = -1; i < VerticesPerChunk + 1; i++)
+	{
+		for (int32 j = -1; j < VerticesPerChunk + 1; j++)
+		{
+			int32 Index = GetIndex(FIntPoint(j, i));
+			if (IsIndexInchunk(FIntPoint(j, i)))	// if it's in small vertices, just copy.
+			{ OutVertices.Add(SmallVertices[Index]); }
+			else									// if it's not in small vertices, make one.
+			{
+				FVector3f Vertex = FVector3f(j, i, 0.0f) * VertexSpacing;
+				if (this->ShouldGenerateHeight)
+				{ Vertex.Z = GetHeight(FVector2D(Vertex.X, Vertex.Y) + Offset); }
+				OutVertices.Add(Vertex);
+			}
+		}
+	}
+}
+
+bool FChunkBuilder::IsIndexInchunk(const FIntPoint& Index)
+{
+	return Index.X >= 0 && Index.X < VerticesPerChunk && Index.Y >= 0 && Index.Y < VerticesPerChunk;
+}

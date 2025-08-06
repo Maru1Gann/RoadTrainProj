@@ -37,6 +37,7 @@ public:
     
 
     void GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
+	void GetStreamSet(const FIntPoint& Chunk, const TArray<FIntPoint>& Path, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
     float GetHeight( const FVector2D& Location );
 
 private:
@@ -49,10 +50,16 @@ private:
     
     // tools_GetStreamset Parts
     void GetVertices( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices );
+	void FlattenPath(const FIntPoint& Chunk, const TArray<FIntPoint>& Path, TArray<FVector3f>& OutVertices);
     void GetUVs( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs );
     void GetTriangles( const int32& VertexCount, TArray<uint32>& OutTriangles );
     void GetTangents(  const int32& VertexCount, const TArray<uint32>& BigTriangles, const TArray<FVector3f>& BigVertices, 
                             TArray<FVector3f>& OutTangents, TArray<FVector3f>& OutNormals );
+	int32 GetIndex(const int32& VertexCount, const FIntPoint& Pos);
+	int32 GetIndex(const FIntPoint& Pos);
+	void GetFlattenSet(const FIntPoint& Case, TSet<FIntPoint>& OutSet);
+	void GetBigVertices(const FIntPoint& Chunk, const TArray<FVector3f>& SmallVertices, TArray<FVector3f>& OutVertices);
+	bool IsIndexInchunk(const FIntPoint& Index);
     // tools_GetStreamset Parts
 
 };
