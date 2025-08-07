@@ -225,24 +225,78 @@ void FChunkBuilder::GetVertices(const FIntPoint& Chunk, const int32 & StartIndex
 // flattens landscape for road
 void FChunkBuilder::FlattenPath(const FIntPoint& Chunk, const TArray<FIntPoint>& Path, TArray<FVector3f>& OutVertices)
 {
-	TSet<FIntPoint> PathSet;
+	// make map for changed heights.
+	TMap<FIntPoint, float> HeightReserved;
 	for (auto& Elem : Path)
-	{ PathSet.Emplace(Elem); }
+	{ HeightReserved.Add(Elem, GetHeight(PosToVector2D(Chunk, Elem))); }
 
-	for (int32 i = 1; i < Path.Num(); i++) // for all path.
+	// do for all path. (except last)
+	for (int i = 0; i < Path.Num() - 1; i++)
 	{
-		FIntPoint Case = Path[i-1] - Path[i];
-		TSet<FIntPoint> Set;
-		GetFlattenSet(Case, Set);
-		float RoadHeight = OutVertices[GetIndex(Path[i])].Z;
-		for (auto& Elem : Set) // for all FlattenSet
-		{ 
-			FIntPoint Pos = Elem + Path[i];
-			// if it's not in boundary of chunk or if not a path. (Shouldn't affect the height of road itself)
-			if ( IsIndexInchunk(Pos) && !PathSet.Contains(Pos) ) 
-			{ OutVertices[GetIndex(Pos)].Z = RoadHeight; }
+		FIntPoint PosNow, PosNext;
+		PosNow = Path[i];
+		PosNext = Path[i + 1];
+		float HeightNow = OutVertices[GetIndex(PosNow)].Z;
+		float HeightNext = OutVertices[GetIndex(PosNext)].Z;
+
+		// flattening algorithm.
+		FIntPoint Case = PosNext - PosNow;
+		if (Case == FIntPoint(0, 1) || Case == FIntPoint(0, -1)) // vertical straight line.
+		{
+			SetHeight(PosNow + FIntPoint(1, 0), HeightNow, HeightReserved);
+			SetHeight(PosNow + FIntPoint(-1, 0), HeightNow, HeightReserved);
 		}
+		else if (Case == FIntPoint(1, 0) || Case == FIntPoint(-1, 0)) // horizontal straight line.
+		{
+			SetHeight(PosNow + FIntPoint(0, 1), HeightNow, HeightReserved);
+			SetHeight(PosNow + FIntPoint(0, -1), HeightNow, HeightReserved);
+		}
+		else if (Case == FIntPoint(-1, 1) || Case == FIntPoint(1, -1)) // diagonal 1 ¢Ø
+		{
+			if (Case == FIntPoint(1, -1))
+			{
+				SetHeight(PosNow + FIntPoint(0, 1), HeightNow, HeightReserved);
+				SetHeight(PosNow + FIntPoint(-1, 0), HeightNow, HeightReserved);
+
+				Swap<FIntPoint>(PosNext, PosNow);
+				Swap<float>(HeightNext, HeightNow);
+			}
+			else
+			{
+				SetHeight(PosNow + FIntPoint(0, -1), HeightNow, HeightReserved);
+				SetHeight(PosNow + FIntPoint(1, 0), HeightNow, HeightReserved);
+			}
+
+			SetHeight(PosNow + FIntPoint(-1, 0), (HeightNext + HeightNow) / 2, HeightReserved);
+			SetHeight(PosNow + FIntPoint(0, 1), (HeightNext + HeightNow) / 2, HeightReserved);
+		}
+		else if (Case == FIntPoint(1, 1) || Case == FIntPoint(-1, -1)) // diagonal 2 ¢Ö
+		{
+
+			if (Case == FIntPoint(-1, -1))
+			{
+				SetHeight(PosNow + FIntPoint(0, 1), HeightNow, HeightReserved);
+				SetHeight(PosNow + FIntPoint(1, 0), HeightNow, HeightReserved);
+				Swap<FIntPoint>(PosNext, PosNow);
+				Swap<float>(HeightNext, HeightNow);
+			}
+			else 
+			{
+				SetHeight(PosNow + FIntPoint(0, -1), HeightNow, HeightReserved);
+				SetHeight(PosNow + FIntPoint(-1, 0), HeightNow, HeightReserved);
+			}
+
+			SetHeight(PosNow + FIntPoint(1, 0), (HeightNext + HeightNow) / 2, HeightReserved);
+			SetHeight(PosNow + FIntPoint(0, 1), (HeightNext + HeightNow) / 2, HeightReserved);
+		}
+
+		for (auto& Elem : HeightReserved)
+		{ 
+			OutVertices[GetIndex(Elem.Key)].Z = Elem.Value; 
+		}
+
 	}
+
 }
 // returns UVs for StreamSet
 void FChunkBuilder::GetUVs(const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs)
@@ -289,6 +343,47 @@ void FChunkBuilder::GetTriangles(const int32& VertexCount, TArray<uint32>& OutTr
 
 	return;
 }
+
+// Adjust triangle to fit Path.
+void FChunkBuilder::AdjustTriangles(const int32& VertexCount, const TArray<FIntPoint>& Path, TArray<uint32> OutTriangles)
+{
+	// numbers of elements of Triangles == (VertexCount - 1) ^ 2 * 6
+	int32 RowNum = (VertexCount - 1);
+
+	for (int32 i = 0; i < Path.Num() - 1; i++)
+	{
+		FIntPoint PosNow, PosNext;
+		PosNow = Path[i];
+		PosNext = Path[i + 1];
+		FIntPoint Case = PosNext - PosNow;
+
+		if (Case == FIntPoint(1, 1) || Case == FIntPoint(-1, -1)) // adjust triangle for diagonal road.
+		{
+			FIntPoint Target1 = PosNow + FIntPoint(0, -1);
+			FIntPoint Target2 = PosNow + FIntPoint(-1, 0);
+
+			if ( IsIndexInChunk(VertexCount - 1, Target1) )
+			{
+				int32 Index = GetIndex(RowNum, Target1);
+				Index *= 6;
+				OutTriangles[Index] = GetIndex(Target1);
+				OutTriangles[Index + 1] = GetIndex(Target1) + VertexCount + 1;
+				OutTriangles[Index + 2] = GetIndex(Target1) + 1;
+			}
+			if ( IsIndexInChunk(VertexCount - 1, Target2) )
+			{
+				int32 Index = GetIndex(RowNum, Target1);
+				Index *= 6;
+				OutTriangles[Index] = GetIndex(Target2);
+				OutTriangles[Index + 1] = GetIndex(Target2) + VertexCount + 1;
+				OutTriangles[Index + 2] = GetIndex(Target2) + 1;
+			}
+
+		}
+	}
+}
+
+
 
 // returns Small Tangents and Normals that are continuous along chunks.
 void FChunkBuilder::GetTangents( const int32& VertexCount, const TArray<uint32>& BigTriangles, const TArray<FVector3f>& BigVertices, TArray<FVector3f>& OutTangents, TArray<FVector3f>& OutNormals )
@@ -367,31 +462,10 @@ int32 FChunkBuilder::GetIndex(const FIntPoint& Pos)
 	return GetIndex(VerticesPerChunk, Pos);
 }
 
-void FChunkBuilder::GetFlattenSet(const FIntPoint& Case, TSet<FIntPoint>& OutSet)
+void FChunkBuilder::GetFlattenSet(const FIntPoint& Path1, const FIntPoint& Path2, const FIntPoint Path3, TSet<FIntPoint>& OutSet)
 {
-	if (Case == FIntPoint(1, 0) || Case == FIntPoint(-1,0) )
-	{
-		OutSet.Add(FIntPoint(0, -1));
-		OutSet.Add(FIntPoint(0, 1));
-	}
-	if (Case == FIntPoint(0, 1) || Case == FIntPoint(0, -1))
-	{
-		OutSet.Add(FIntPoint(1, 0));
-		OutSet.Add(FIntPoint(-1, 0));
-	}
-	if (Case == FIntPoint(1, 1) || Case == FIntPoint(-1, -1) || Case == FIntPoint(1, -1) || Case == FIntPoint(-1, 1)) // diagonal
-	{
-		OutSet.Add(FIntPoint(1, 0));
-		OutSet.Add(FIntPoint(-1, 0));
-		OutSet.Add(FIntPoint(0, -1));
-		OutSet.Add(FIntPoint(0, 1));
+	// get relative pos of three Path and make it right.
 
-		// diagonal set.
-		OutSet.Add(FIntPoint(1, 1));
-		OutSet.Add(FIntPoint(-1, 1));
-		OutSet.Add(FIntPoint(-1, -1));
-		OutSet.Add(FIntPoint(1, -1));
-	}
 
 	return;
 }
@@ -407,7 +481,7 @@ void FChunkBuilder::GetBigVertices(const FIntPoint& Chunk, const TArray<FVector3
 		for (int32 j = -1; j < VerticesPerChunk + 1; j++)
 		{
 			int32 Index = GetIndex(FIntPoint(j, i));
-			if (IsIndexInchunk(FIntPoint(j, i)))	// if it's in small vertices, just copy.
+			if (IsIndexInChunk(FIntPoint(j, i)))	// if it's in small vertices, just copy.
 			{ OutVertices.Add(SmallVertices[Index]); }
 			else									// if it's not in small vertices, make one.
 			{
@@ -420,7 +494,29 @@ void FChunkBuilder::GetBigVertices(const FIntPoint& Chunk, const TArray<FVector3
 	}
 }
 
-bool FChunkBuilder::IsIndexInchunk(const FIntPoint& Index)
+bool FChunkBuilder::IsIndexInChunk(const int32& VertexCount, const FIntPoint& Index)
 {
-	return Index.X >= 0 && Index.X < VerticesPerChunk && Index.Y >= 0 && Index.Y < VerticesPerChunk;
+	return Index.X >= 0 && Index.X < VertexCount && Index.Y >= 0 && Index.Y < VertexCount;
 }
+
+bool FChunkBuilder::IsIndexInChunk(const FIntPoint& Index)
+{
+	return IsIndexInChunk(VerticesPerChunk, Index);
+}
+
+FVector2D FChunkBuilder::PosToVector2D(const FIntPoint& Chunk, const FIntPoint& Pos)
+{
+	FVector2D Offset = FVector2D(Chunk.X, Chunk.Y) * ChunkLength;
+	FVector2D Offset2 = FVector2D(Pos.X, Pos.Y) * VertexSpacing;
+	return Offset + Offset2;
+}
+
+// Checks if Pos is in chunk bound internally. macro for FlattenPath.
+void FChunkBuilder::SetHeight(const FIntPoint& Pos, const float& Height, TMap<FIntPoint, float>& HeightReserved)
+{
+	if ( !IsIndexInChunk(Pos) || HeightReserved.Contains(Pos) )
+	{ return; }
+	
+	HeightReserved.Add(Pos, Height);
+}
+

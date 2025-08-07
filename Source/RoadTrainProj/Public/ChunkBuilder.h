@@ -48,18 +48,24 @@ private:
 	    float ChunkLength;
 	
     
-    // tools_GetStreamset Parts
+    // tools
     void GetVertices( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices );
 	void FlattenPath(const FIntPoint& Chunk, const TArray<FIntPoint>& Path, TArray<FVector3f>& OutVertices);
     void GetUVs( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs );
     void GetTriangles( const int32& VertexCount, TArray<uint32>& OutTriangles );
+	void AdjustTriangles(const int32& VertexCount, const TArray<FIntPoint>& Path, TArray<uint32> OutTriangles);
     void GetTangents(  const int32& VertexCount, const TArray<uint32>& BigTriangles, const TArray<FVector3f>& BigVertices, 
                             TArray<FVector3f>& OutTangents, TArray<FVector3f>& OutNormals );
+
 	int32 GetIndex(const int32& VertexCount, const FIntPoint& Pos);
 	int32 GetIndex(const FIntPoint& Pos);
-	void GetFlattenSet(const FIntPoint& Case, TSet<FIntPoint>& OutSet);
+	void GetFlattenSet(const FIntPoint& Path1, const FIntPoint& Path2, const FIntPoint Path3, TSet<FIntPoint>& OutSet);
 	void GetBigVertices(const FIntPoint& Chunk, const TArray<FVector3f>& SmallVertices, TArray<FVector3f>& OutVertices);
-	bool IsIndexInchunk(const FIntPoint& Index);
-    // tools_GetStreamset Parts
+	
+	bool IsIndexInChunk(const int32& VertexCount, const FIntPoint& Index);
+	bool IsIndexInChunk(const FIntPoint& Index);
 
+	FVector2D PosToVector2D(const FIntPoint& Chunk, const FIntPoint& Pos);
+
+	void SetHeight(const FIntPoint& Pos, const float& Height, TMap<FIntPoint, float>& HeightReserved);
 };

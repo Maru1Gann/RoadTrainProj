@@ -77,6 +77,14 @@ float FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray
         {
             float NewCost = CostNow + GetUnitDistSquared( PosNow, PosNext );
 
+            // check direction. ( road angle lower than 90 )
+            FIntPoint* PosLast = Came_From.Find(PosNow);
+            float NormalizedDotResult = 1;
+            if ( PosLast )
+            { NormalizedDotResult = GetDirectionBias(*PosLast, PosNow, PosNext); }
+            if ( NormalizedDotResult <= 0 )
+            { continue; }
+
             // check slopes
             float SlopeSqr = GetSlopeSquared( End.Belong, PosNow, PosNext );
             if( SlopeSqr > pLM->MaxSlope * pLM->MaxSlope )
@@ -93,9 +101,8 @@ float FPathFinder::GetPath( const FPathNode& Start, const FPathNode& End, TArray
 
                 // we need to add direction panelty. we need position of last, now, next
                 float DirectionPanelty = 0.f;
-                FIntPoint* PosLast = Came_From.Find( PosNow );
                 if( PosLast ) // -1 means opposite direction. -> substract from 1 -> if close to opposite, panelty.
-                { DirectionPanelty += (1 - GetDirectionBias( *PosLast, PosNow, PosNext )) * pLM->DirectionPaneltyWeight; }
+                { DirectionPanelty += (1 - NormalizedDotResult) * pLM->DirectionPaneltyWeight; }
 
                 float Priority = NewCost + Heuristics + SlopePanelty + DirectionPanelty;
 
