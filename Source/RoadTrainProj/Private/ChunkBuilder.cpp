@@ -120,6 +120,8 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, const TArray<FIntPoint>
 
 	GetTriangles(VerticesPerChunk,
 		Triangles);
+	AdjustTriangles(VerticesPerChunk, Path, 
+		Triangles);
 
 	Tangents.SetNum(Vertices.Num());
 	Normals.SetNum(Vertices.Num());
@@ -130,7 +132,7 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, const TArray<FIntPoint>
 
 	GetBigVertices(Chunk, Vertices, 
 		BigVertices);
-	GetTriangles(VerticesPerChunk + 2,
+	GetTriangles(VerticesPerChunk+2, 
 		BigTriangles);
 
 	// Normals and Tangents made out of Big datas.
@@ -344,14 +346,16 @@ void FChunkBuilder::GetTriangles(const int32& VertexCount, TArray<uint32>& OutTr
 	return;
 }
 
+
 // Adjust triangle to fit Path.
-void FChunkBuilder::AdjustTriangles(const int32& VertexCount, const TArray<FIntPoint>& Path, TArray<uint32> OutTriangles)
+void FChunkBuilder::AdjustTriangles(const int32& VertexCount, const TArray<FIntPoint>& Path, TArray<uint32>& OutTriangles)
 {
 	// numbers of elements of Triangles == (VertexCount - 1) ^ 2 * 6
 	int32 RowNum = (VertexCount - 1);
 
 	for (int32 i = 0; i < Path.Num() - 1; i++)
 	{
+		
 		FIntPoint PosNow, PosNext;
 		PosNow = Path[i];
 		PosNext = Path[i + 1];
@@ -359,30 +363,58 @@ void FChunkBuilder::AdjustTriangles(const int32& VertexCount, const TArray<FIntP
 
 		if (Case == FIntPoint(1, 1) || Case == FIntPoint(-1, -1)) // adjust triangle for diagonal road.
 		{
-			FIntPoint Target1 = PosNow + FIntPoint(0, -1);
-			FIntPoint Target2 = PosNow + FIntPoint(-1, 0);
+			TArray<FIntPoint> Targets;
+			Targets.Add(PosNow + FIntPoint(0, 1));
+			Targets.Add(PosNow + FIntPoint(1, 0) );
+			Targets.Add(PosNow + FIntPoint(-1, 0) );
+			Targets.Add(PosNow + FIntPoint(0, -1) );
+			
+			Targets.Add(PosNow + FIntPoint(-1, 1));
+			Targets.Add(PosNow + FIntPoint(-2, 0));
+			Targets.Add(PosNow + FIntPoint(0, -2));
+			Targets.Add(PosNow + FIntPoint(1, -1));
 
-			if ( IsIndexInChunk(VertexCount - 1, Target1) )
+			for (auto& Target : Targets)
 			{
-				int32 Index = GetIndex(RowNum, Target1);
-				Index *= 6;
-				OutTriangles[Index] = GetIndex(Target1);
-				OutTriangles[Index + 1] = GetIndex(Target1) + VertexCount + 1;
-				OutTriangles[Index + 2] = GetIndex(Target1) + 1;
+				if (IsIndexInChunk(RowNum, Target))
+				{
+					int32 Index = GetIndex(RowNum, Target);
+					Index *= 6;
+					int32 CurrentVertex = GetIndex(Target);
+					MakeSquare(Index, CurrentVertex, VertexCount, OutTriangles);
+				}
 			}
-			if ( IsIndexInChunk(VertexCount - 1, Target2) )
-			{
-				int32 Index = GetIndex(RowNum, Target1);
-				Index *= 6;
-				OutTriangles[Index] = GetIndex(Target2);
-				OutTriangles[Index + 1] = GetIndex(Target2) + VertexCount + 1;
-				OutTriangles[Index + 2] = GetIndex(Target2) + 1;
-			}
+		} // end of if case.
 
-		}
-	}
+	} // end of for path.
+
 }
 
+void FChunkBuilder::MakeSquare(const int32& Index, const int32& CurrentVertex, const int32& VertexCount, TArray<uint32>& OutTriangles, bool Invert)
+{
+	if (Invert)
+	{
+		OutTriangles[Index + 0] = CurrentVertex;
+		OutTriangles[Index + 1] = CurrentVertex + VertexCount + 1;
+		OutTriangles[Index + 2] = CurrentVertex + 1;
+
+		OutTriangles[Index + 3] = CurrentVertex;
+		OutTriangles[Index + 4] = CurrentVertex + VertexCount;
+		OutTriangles[Index + 5] = CurrentVertex + VertexCount + 1;
+	}
+	else
+	{
+		OutTriangles[Index + 0] = CurrentVertex;
+		OutTriangles[Index + 1] = CurrentVertex + VertexCount;
+		OutTriangles[Index + 2] = CurrentVertex + 1;
+
+		OutTriangles[Index + 3] = CurrentVertex + VertexCount;
+		OutTriangles[Index + 4] = CurrentVertex + VertexCount + 1;
+		OutTriangles[Index + 5] = CurrentVertex + 1;
+	}
+
+	return;
+}
 
 
 // returns Small Tangents and Normals that are continuous along chunks.
