@@ -85,30 +85,83 @@ void ALandscapeManager::Debug()
 	for (int32 i = 1; i < PathNodes.Num(); i++)
 	{ PathMap.Add(PathNodes[i].Belong, i); }
 
+
+	//for (auto& Elem : ChunkOrder) // TODO: need to prioritized chunks with paths!! (for continous chunks)
+	//{
+	//	TArray<int32> Indices;
+	//	PathMap.MultiFind(Elem, Indices);
+
+	//	RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+
+	//	if (!Indices.IsEmpty()) // if Chunk Contains Path
+	//	{
+	//		TArray<FIntPoint> Path;
+	//		for (auto& Index : Indices) // get path
+	//		{
+	//			TArray<FIntPoint> TempPath;
+	//			PathFinder->GetPath(PathNodes[Index - 1], PathNodes[Index], TempPath);
+	//			Path.Append(TempPath);
+	//		}
+	//		ChunkBuilder->GetStreamSet(Elem, Path, StreamSet); // flattener version.
+	//		DrawPathDebugPoints(Elem, Path);
+	//	}
+	//	else
+	//	{ ChunkBuilder->GetStreamSet(Elem, StreamSet); } // normal version.
+
+	//	AddChunk(Elem, StreamSet);
+	//}
+
+	TArray<FIntPoint> ChunkWithPath;
+	TArray<FIntPoint> OtherChunks;
 	for (auto& Elem : ChunkOrder)
+	{
+		if (PathMap.Contains(Elem))
+		{ 
+			ChunkWithPath.Add(Elem); 
+		}
+		else
+		{ OtherChunks.Add(Elem); }
+	}
+
+	for (auto& Elem : ChunkWithPath)
 	{
 		TArray<int32> Indices;
 		PathMap.MultiFind(Elem, Indices);
-
 		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
 
-		if (!Indices.IsEmpty()) // if Chunk Contains Path
+		TArray<FIntPoint> Path;
+		for (auto& Index : Indices)
 		{
-			TArray<FIntPoint> Path;
-			for (auto& Index : Indices) // get path
-			{
-				TArray<FIntPoint> TempPath;
-				PathFinder->GetPath(PathNodes[Index - 1], PathNodes[Index], TempPath);
-				Path.Append(TempPath);
-			}
-			ChunkBuilder->GetStreamSet(Elem, Path, StreamSet); // flattener version.
-			DrawPathDebugPoints(Elem, Path);
-		}
-		else
-		{ ChunkBuilder->GetStreamSet(Elem, StreamSet); } // normal version.
+			TArray<FIntPoint> TempPath;
 
+			// continous chunk test.
+
+			if (Index - 1 > 1)
+			{
+				PathFinder->GetPath(PathNodes[Index - 2], PathNodes[Index - 1], TempPath);
+				Path.Add(TempPath.Last());
+			}
+
+			PathFinder->GetPath(PathNodes[Index - 1], PathNodes[Index], TempPath);
+			Path.Append(TempPath);
+
+			if (Index + 1 < PathNodes.Num())
+			{
+				PathFinder->GetPath(PathNodes[Index + 1], PathNodes[Index], TempPath);
+				Path.Add(TempPath[0]);
+			}
+		}
+		ChunkBuilder->GetStreamSet(Elem, Path, StreamSet);
+		DrawPathDebugPoints(Elem, Path);
 		AddChunk(Elem, StreamSet);
 	}
+	for (auto& Elem : OtherChunks)
+	{
+		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+		ChunkBuilder->GetStreamSet(Elem, StreamSet);
+		AddChunk(Elem, StreamSet);
+	}
+
 }
 
 float ALandscapeManager::GetHeight( const FVector2D& Location )
@@ -119,6 +172,7 @@ float ALandscapeManager::GetHeight( const FVector2D& Location )
 // Add Chunk as an Actor into the world.
 void ALandscapeManager::AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet)
 {
+
 	UWorld* pWorld = GetWorld();
 	if (!pWorld)
 	{ UE_LOG(LogTemp, Warning, TEXT("GetWorld() nullptr")); 
@@ -163,6 +217,7 @@ void ALandscapeManager::AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRe
 	{ pRMC->SetMaterial(0, Material); }
 
 	// add it to status (member)
+	RemoveChunk(Chunk);
 	Chunks.Add(Chunk, pRMA);
 
 	// update configuration.

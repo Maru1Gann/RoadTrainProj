@@ -3,7 +3,8 @@
 #include "PerlinNoiseVariables.h"   // NoiseLayers
 
 #include "PathFinder.h" // path finding
-#include "PathNode.h"
+
+#include "Containers/Map.h" // MultiMap
 
 #include "LandscapeManager.h"
 
@@ -45,6 +46,10 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtime
 	GetTriangles( VerticesPerChunk, 
 		Triangles );
 
+	ApplyModified(Chunk, 
+		Vertices, Triangles); // this is previously modified ones by other chunks. ( continuous chunk thingy )
+
+
 	Tangents.SetNum(Vertices.Num());
 	Normals.SetNum(Vertices.Num());
 
@@ -52,7 +57,7 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtime
 	TArray<FVector3f> BigVertices;
 	TArray<uint32> BigTriangles;
 	
-	GetVertices( Chunk, -1, VerticesPerChunk + 1, VertexSpacing, 
+	GetBigVertices( Chunk, Vertices,
 		BigVertices );
 	GetTriangles( VerticesPerChunk + 2, 
 		BigTriangles );
@@ -94,6 +99,9 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtime
 		);
 	}
 
+	HeightModified.Remove(Chunk);
+	TriangleModified.Remove(Chunk);
+
 	return;
 
 }
@@ -112,16 +120,20 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, const TArray<FIntPoint>
 	GetVertices(Chunk, 0, VerticesPerChunk, VertexSpacing,
 		Vertices); // this line for OutParam.
 
-	FlattenPath(Chunk, Path, 
-		Vertices); // Flattening path. Overloaded function for this. TODO: do this on Big Verts, too.
-
 	GetUVs(Chunk, 0, VerticesPerChunk, UVScale,
 		UVs);
 
 	GetTriangles(VerticesPerChunk,
 		Triangles);
-	AdjustTriangles(VerticesPerChunk, Path, 
+
+
+	FlattenPath(Chunk, Path,
+		Vertices); // Flattening path. Overloaded function for this.
+	AdjustTriangles(Chunk, VerticesPerChunk, Path, 
 		Triangles);
+
+	ApplyModified(Chunk,
+		Vertices, Triangles); // this is previously modified ones by other chunks. ( continuous chunk thingy )
 
 	Tangents.SetNum(Vertices.Num());
 	Normals.SetNum(Vertices.Num());
@@ -230,7 +242,10 @@ void FChunkBuilder::FlattenPath(const FIntPoint& Chunk, const TArray<FIntPoint>&
 	// make map for changed heights.
 	TMap<FIntPoint, float> HeightReserved;
 	for (auto& Elem : Path)
-	{ HeightReserved.Add(Elem, GetHeight(PosToVector2D(Chunk, Elem))); }
+	{ 
+		float Height = GetHeight(PosToVector2D(Chunk, Elem));
+		HeightReserved.Add(Elem, Height); //occupy path.
+	}
 
 	// do for all path. (except last)
 	for (int i = 0; i < Path.Num() - 1; i++)
@@ -238,58 +253,60 @@ void FChunkBuilder::FlattenPath(const FIntPoint& Chunk, const TArray<FIntPoint>&
 		FIntPoint PosNow, PosNext;
 		PosNow = Path[i];
 		PosNext = Path[i + 1];
-		float HeightNow = OutVertices[GetIndex(PosNow)].Z;
-		float HeightNext = OutVertices[GetIndex(PosNext)].Z;
+		float HeightNow = GetHeight(PosToVector2D(Chunk, PosNow));
+		float HeightNext = GetHeight(PosToVector2D(Chunk, PosNext));
+		//float HeightNow = OutVertices[GetIndex(PosNow)].Z;
+		//float HeightNext = OutVertices[GetIndex(PosNext)].Z;
 
 		// flattening algorithm.
 		FIntPoint Case = PosNext - PosNow;
 		if (Case == FIntPoint(0, 1) || Case == FIntPoint(0, -1)) // vertical straight line.
 		{
-			SetHeight(PosNow + FIntPoint(1, 0), HeightNow, HeightReserved);
-			SetHeight(PosNow + FIntPoint(-1, 0), HeightNow, HeightReserved);
+			SetHeight(Chunk, PosNow + FIntPoint(1, 0), HeightNow, HeightReserved);
+			SetHeight(Chunk, PosNow + FIntPoint(-1, 0), HeightNow, HeightReserved);
 		}
 		else if (Case == FIntPoint(1, 0) || Case == FIntPoint(-1, 0)) // horizontal straight line.
 		{
-			SetHeight(PosNow + FIntPoint(0, 1), HeightNow, HeightReserved);
-			SetHeight(PosNow + FIntPoint(0, -1), HeightNow, HeightReserved);
+			SetHeight(Chunk, PosNow + FIntPoint(0, 1), HeightNow, HeightReserved);
+			SetHeight(Chunk, PosNow + FIntPoint(0, -1), HeightNow, HeightReserved);
 		}
 		else if (Case == FIntPoint(-1, 1) || Case == FIntPoint(1, -1)) // diagonal 1 ¢Ø
 		{
 			if (Case == FIntPoint(1, -1))
 			{
-				SetHeight(PosNow + FIntPoint(0, 1), HeightNow, HeightReserved);
-				SetHeight(PosNow + FIntPoint(-1, 0), HeightNow, HeightReserved);
+				SetHeight(Chunk, PosNow + FIntPoint(0, 1), HeightNow, HeightReserved);
+				SetHeight(Chunk, PosNow + FIntPoint(-1, 0), HeightNow, HeightReserved);
 
 				Swap<FIntPoint>(PosNext, PosNow);
 				Swap<float>(HeightNext, HeightNow);
 			}
 			else
 			{
-				SetHeight(PosNow + FIntPoint(0, -1), HeightNow, HeightReserved);
-				SetHeight(PosNow + FIntPoint(1, 0), HeightNow, HeightReserved);
+				SetHeight(Chunk, PosNow + FIntPoint(0, -1), HeightNow, HeightReserved);
+				SetHeight(Chunk, PosNow + FIntPoint(1, 0), HeightNow, HeightReserved);
 			}
 
-			SetHeight(PosNow + FIntPoint(-1, 0), (HeightNext + HeightNow) / 2, HeightReserved);
-			SetHeight(PosNow + FIntPoint(0, 1), (HeightNext + HeightNow) / 2, HeightReserved);
+			SetHeight(Chunk, PosNow + FIntPoint(-1, 0), (HeightNext + HeightNow) / 2, HeightReserved);
+			SetHeight(Chunk, PosNow + FIntPoint(0, 1), (HeightNext + HeightNow) / 2, HeightReserved);
 		}
 		else if (Case == FIntPoint(1, 1) || Case == FIntPoint(-1, -1)) // diagonal 2 ¢Ö
 		{
 
 			if (Case == FIntPoint(-1, -1))
 			{
-				SetHeight(PosNow + FIntPoint(0, 1), HeightNow, HeightReserved);
-				SetHeight(PosNow + FIntPoint(1, 0), HeightNow, HeightReserved);
+				SetHeight(Chunk, PosNow + FIntPoint(0, 1), HeightNow, HeightReserved);
+				SetHeight(Chunk, PosNow + FIntPoint(1, 0), HeightNow, HeightReserved);
 				Swap<FIntPoint>(PosNext, PosNow);
 				Swap<float>(HeightNext, HeightNow);
 			}
 			else 
 			{
-				SetHeight(PosNow + FIntPoint(0, -1), HeightNow, HeightReserved);
-				SetHeight(PosNow + FIntPoint(-1, 0), HeightNow, HeightReserved);
+				SetHeight(Chunk, PosNow + FIntPoint(0, -1), HeightNow, HeightReserved);
+				SetHeight(Chunk, PosNow + FIntPoint(-1, 0), HeightNow, HeightReserved);
 			}
 
-			SetHeight(PosNow + FIntPoint(1, 0), (HeightNext + HeightNow) / 2, HeightReserved);
-			SetHeight(PosNow + FIntPoint(0, 1), (HeightNext + HeightNow) / 2, HeightReserved);
+			SetHeight(Chunk, PosNow + FIntPoint(1, 0), (HeightNext + HeightNow) / 2, HeightReserved);
+			SetHeight(Chunk, PosNow + FIntPoint(0, 1), (HeightNext + HeightNow) / 2, HeightReserved);
 		}
 
 		for (auto& Elem : HeightReserved)
@@ -348,14 +365,14 @@ void FChunkBuilder::GetTriangles(const int32& VertexCount, TArray<uint32>& OutTr
 
 
 // Adjust triangle to fit Path.
-void FChunkBuilder::AdjustTriangles(const int32& VertexCount, const TArray<FIntPoint>& Path, TArray<uint32>& OutTriangles)
+void FChunkBuilder::AdjustTriangles(const FIntPoint& Chunk, const int32& VertexCount, const TArray<FIntPoint>& Path, TArray<uint32>& OutTriangles)
 {
 	// numbers of elements of Triangles == (VertexCount - 1) ^ 2 * 6
 	int32 RowNum = (VertexCount - 1);
 
 	for (int32 i = 0; i < Path.Num() - 1; i++)
 	{
-		
+
 		FIntPoint PosNow, PosNext;
 		PosNow = Path[i];
 		PosNext = Path[i + 1];
@@ -374,6 +391,8 @@ void FChunkBuilder::AdjustTriangles(const int32& VertexCount, const TArray<FIntP
 			Targets.Add(PosNow + FIntPoint(0, -2));
 			Targets.Add(PosNow + FIntPoint(1, -1));
 
+			Targets.Add(PosNow + FIntPoint(2, 0));
+
 			for (auto& Target : Targets)
 			{
 				if (IsIndexInChunk(RowNum, Target))
@@ -383,9 +402,19 @@ void FChunkBuilder::AdjustTriangles(const int32& VertexCount, const TArray<FIntP
 					int32 CurrentVertex = GetIndex(Target);
 					MakeSquare(Index, CurrentVertex, VertexCount, OutTriangles);
 				}
+				else // continuous chunk preparation.
+				{
+					TArray<TPair<FIntPoint, FIntPoint>> OtherChunkPos;
+					GetOtherPos(Chunk, Target, OtherChunkPos);
+					for (auto& Elem : OtherChunkPos)
+					{
+						if (IsIndexInChunk(RowNum, Elem.Value)) // check if valid for triangle. (for the chunk)
+						{ TriangleModified.Add(Elem.Key, Elem.Value); }
+					}
+				}
+
 			}
 		} // end of if case.
-
 	} // end of for path.
 
 }
@@ -484,6 +513,37 @@ void FChunkBuilder::GetTangents( const int32& VertexCount, const TArray<uint32>&
 	return;
 }
 
+// applies modified values for continuous chunk. APPLY BEFORE OTHER MODIFICATIONS!!!
+void FChunkBuilder::ApplyModified(const FIntPoint& Chunk, TArray<FVector3f>& OutVertices, TArray<uint32>& OutTriangles)
+{
+	// modified
+	TArray<TPair<FIntPoint, float>> Heights;
+	TArray<FIntPoint> Triangles;
+
+	HeightModified.MultiFind(Chunk, Heights);
+	TriangleModified.MultiFind(Chunk, Triangles);
+
+	int32 RowNum = VerticesPerChunk - 1; // Row Num for Triangle Array.
+
+	for (auto& Elem : Heights)
+	{
+		int32 Index = GetIndex(Elem.Key);
+		OutVertices[Index].Z = Elem.Value;
+	}
+	for (auto& Pos : Triangles)
+	{
+		if (IsIndexInChunk(RowNum, Pos))
+		{
+			int32 Index = GetIndex(RowNum, Pos);
+			Index *= 6;
+			int32 CurrentVertex = GetIndex(Pos);
+			MakeSquare(Index, CurrentVertex, VerticesPerChunk, OutTriangles);
+		}
+	}
+
+}
+
+
 int32 FChunkBuilder::GetIndex(const int32& VertexCount, const FIntPoint& Pos)
 {
 	return Pos.Y * VertexCount + Pos.X;
@@ -492,14 +552,6 @@ int32 FChunkBuilder::GetIndex(const int32& VertexCount, const FIntPoint& Pos)
 int32 FChunkBuilder::GetIndex(const FIntPoint& Pos)
 {
 	return GetIndex(VerticesPerChunk, Pos);
-}
-
-void FChunkBuilder::GetFlattenSet(const FIntPoint& Path1, const FIntPoint& Path2, const FIntPoint Path3, TSet<FIntPoint>& OutSet)
-{
-	// get relative pos of three Path and make it right.
-
-
-	return;
 }
 
 // this returns one vertex bigger square for normal calculation.
@@ -521,9 +573,28 @@ void FChunkBuilder::GetBigVertices(const FIntPoint& Chunk, const TArray<FVector3
 				if (this->ShouldGenerateHeight)
 				{ Vertex.Z = GetHeight(FVector2D(Vertex.X, Vertex.Y) + Offset); }
 				OutVertices.Add(Vertex);
+
+				// look for modifications
+				TArray<TPair<FIntPoint, FIntPoint>> OtherPos;
+				GetOtherPos(Chunk, FIntPoint(j, i), OtherPos);
+				for (auto& Pos : OtherPos) // for possible pos for other chunks
+				{
+					TArray<TPair<FIntPoint, float>> PosHeights;
+					HeightModified.MultiFind(Pos.Key, PosHeights); // find exisiting ones.
+
+					TMap<FIntPoint, int32> PosMap;
+					for (int32 ih = 0; ih < PosHeights.Num(); ih++)
+					{ PosMap.Add(PosHeights[ih].Key, ih); } // Position and index
+
+					int32* Modified = PosMap.Find(Pos.Value); // if same position exists
+					if (Modified)
+					{ Vertex.Z = PosHeights[*Modified].Value; } // change it to modified(preoccupied) value.
+				}
+
 			}
 		}
 	}
+
 }
 
 bool FChunkBuilder::IsIndexInChunk(const int32& VertexCount, const FIntPoint& Index)
@@ -536,6 +607,40 @@ bool FChunkBuilder::IsIndexInChunk(const FIntPoint& Index)
 	return IsIndexInChunk(VerticesPerChunk, Index);
 }
 
+
+// if the position can be converted into other chunks point, add it to outarray.
+void FChunkBuilder::GetOtherPos(const FIntPoint& DefaultChunk, const FIntPoint& DefaultPos, TArray<TPair<FIntPoint, FIntPoint>>& OutOtherPos)
+{
+	OutOtherPos.Empty();
+
+	for (int32 i = -1; i <= 1; i++)
+	{
+		for (int32 j = -1; j <= 1; j++)
+		{
+			if(j == 0 && i == 0) // skip self.
+			{ continue; }
+
+			FIntPoint TargetChunk = DefaultChunk + FIntPoint(j, i);
+			TPair<FIntPoint, FIntPoint> Converted = ChangeChunkPos(DefaultChunk, DefaultPos, TargetChunk);
+			if (IsIndexInChunk(Converted.Value))
+			{
+				OutOtherPos.Add(Converted);
+			}
+
+		} // for j
+	} // for i
+
+}
+
+
+TPair<FIntPoint, FIntPoint> FChunkBuilder::ChangeChunkPos(const FIntPoint& DefaultChunk, const FIntPoint& DefaultPos, const FIntPoint& TargetChunk)
+{
+	FIntPoint Global = DefaultChunk * (VerticesPerChunk - 1) + DefaultPos;
+	FIntPoint TargetLocal = Global - TargetChunk * (VerticesPerChunk - 1);
+	return TPair<FIntPoint, FIntPoint>(TargetChunk, TargetLocal);
+}
+
+
 FVector2D FChunkBuilder::PosToVector2D(const FIntPoint& Chunk, const FIntPoint& Pos)
 {
 	FVector2D Offset = FVector2D(Chunk.X, Chunk.Y) * ChunkLength;
@@ -544,11 +649,24 @@ FVector2D FChunkBuilder::PosToVector2D(const FIntPoint& Chunk, const FIntPoint& 
 }
 
 // Checks if Pos is in chunk bound internally. macro for FlattenPath.
-void FChunkBuilder::SetHeight(const FIntPoint& Pos, const float& Height, TMap<FIntPoint, float>& HeightReserved)
+void FChunkBuilder::SetHeight(const FIntPoint& Chunk, const FIntPoint& Pos, const float& Height, TMap<FIntPoint, float>& HeightReserved)
 {
-	if ( !IsIndexInChunk(Pos) || HeightReserved.Contains(Pos) )
+	if ( HeightReserved.Contains(Pos) ) // if this position already occupied, return.
 	{ return; }
-	
+
+	// preparation for continous chunk
+	TArray<TPair<FIntPoint, FIntPoint>> OtherChunkPos;
+	GetOtherPos(Chunk, Pos, OtherChunkPos);
+	for (auto& Elem : OtherChunkPos)
+	{
+		TPair<FIntPoint, float> PosHeight(Elem.Value, Height);
+		HeightModified.Add(Elem.Key, PosHeight);
+	}
+
+	if ( !IsIndexInChunk(Pos) )
+	{ return; }
+
+
 	HeightReserved.Add(Pos, Height);
 }
 

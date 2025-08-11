@@ -268,6 +268,8 @@ float FPathFinder::GetBestGate( const FIntPoint& Chunk, const FIntPoint& NextChu
     TMap< FIntPoint, float > CostMap;
     CostMap.Emplace( StartPos , 0.f );
 
+    TMap< FIntPoint, FIntPoint > CameFrom;
+
     // Goal set.
     TSet< FIntPoint > GoalSet;
     GetGoalSet(Chunk, NextChunk, GoalSet); // out param.
@@ -294,6 +296,15 @@ float FPathFinder::GetBestGate( const FIntPoint& Chunk, const FIntPoint& NextChu
         GetNeighbors( PosNow, Neighbors );
         for( auto& PosNext : Neighbors )
         {
+            // path validation syncronization for GetPath.
+            FIntPoint* PosLast = CameFrom.Find(PosNow);
+            float NormalizedDotResult = 1;
+            if (PosLast)
+            { NormalizedDotResult = GetDirectionBias(*PosLast, PosNow, PosNext); }
+            if (NormalizedDotResult <= 0)
+            { continue; }
+
+
             float NewCost = CostNow + GetUnitDistSquared( PosNow, PosNext );
 
             // check slopes
@@ -308,6 +319,7 @@ float FPathFinder::GetBestGate( const FIntPoint& Chunk, const FIntPoint& NextChu
                 float Priority = NewCost + Heuristic( ConvertToGlobal( Chunk, PosNext ), pLM->End );
 
                 Frontier.HeapPush(TPair<float, FIntPoint>( Priority, PosNext ), Predicate);
+                CameFrom.Add(PosNext, PosNow);
             }
         }
     }
