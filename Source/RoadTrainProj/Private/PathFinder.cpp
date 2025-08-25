@@ -8,7 +8,6 @@ const float INFLOAT = std::numeric_limits<float>::infinity(); // float INF for o
 
 FPathFinder::FPathFinder( ALandscapeManager* pLM ) : pLM( pLM )
 {
-
 }
 
 // this returns Path from Start to End ( should be the exact next gate )

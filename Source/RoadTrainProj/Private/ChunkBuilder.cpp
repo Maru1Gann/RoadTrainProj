@@ -214,6 +214,14 @@ float FChunkBuilder::GetHeight( const FVector2D& Location )
 	return height;
 }
 
+// change the Chunk, Pos to targetchunk.
+TPair<FIntPoint, FIntPoint> FChunkBuilder::ChangeChunkPos(const FIntPoint& DefaultChunk, const FIntPoint& DefaultPos, const FIntPoint& TargetChunk)
+{
+	FIntPoint Global = DefaultChunk * (VerticesPerChunk - 1) + DefaultPos;
+	FIntPoint TargetLocal = Global - TargetChunk * (VerticesPerChunk - 1);
+	return TPair<FIntPoint, FIntPoint>(TargetChunk, TargetLocal);
+}
+
 // returns Vertices for Streamset.
 void FChunkBuilder::GetVertices(const FIntPoint& Chunk, const int32 & StartIndex, const int32 & EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices)
 {
@@ -243,8 +251,11 @@ void FChunkBuilder::FlattenPath(const FIntPoint& Chunk, const TArray<FIntPoint>&
 	TMap<FIntPoint, float> HeightReserved;
 	for (auto& Elem : Path)
 	{ 
-		float Height = GetHeight(PosToVector2D(Chunk, Elem));
-		HeightReserved.Add(Elem, Height); //occupy path.
+		if (IsIndexInChunk(Elem)) // we put in two more path point out of chunk, front and end. (for continous chunk)
+		{
+			float Height = GetHeight(PosToVector2D(Chunk, Elem));
+			HeightReserved.Add(Elem, Height); //occupy path.
+		}
 	}
 
 	// do for all path. (except last)
@@ -311,7 +322,16 @@ void FChunkBuilder::FlattenPath(const FIntPoint& Chunk, const TArray<FIntPoint>&
 
 		for (auto& Elem : HeightReserved)
 		{ 
-			OutVertices[GetIndex(Elem.Key)].Z = Elem.Value; 
+			int32 Index = GetIndex(Elem.Key);
+			if (Index < 0 || Index >= OutVertices.Num())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("OutVertices Index error"));
+			}
+			else
+			{
+				OutVertices[Index].Z = Elem.Value;
+			}
+			
 		}
 
 	}
@@ -633,14 +653,6 @@ void FChunkBuilder::GetOtherPos(const FIntPoint& DefaultChunk, const FIntPoint& 
 }
 
 
-TPair<FIntPoint, FIntPoint> FChunkBuilder::ChangeChunkPos(const FIntPoint& DefaultChunk, const FIntPoint& DefaultPos, const FIntPoint& TargetChunk)
-{
-	FIntPoint Global = DefaultChunk * (VerticesPerChunk - 1) + DefaultPos;
-	FIntPoint TargetLocal = Global - TargetChunk * (VerticesPerChunk - 1);
-	return TPair<FIntPoint, FIntPoint>(TargetChunk, TargetLocal);
-}
-
-
 FVector2D FChunkBuilder::PosToVector2D(const FIntPoint& Chunk, const FIntPoint& Pos)
 {
 	FVector2D Offset = FVector2D(Chunk.X, Chunk.Y) * ChunkLength;
@@ -663,10 +675,10 @@ void FChunkBuilder::SetHeight(const FIntPoint& Chunk, const FIntPoint& Pos, cons
 		HeightModified.Add(Elem.Key, PosHeight);
 	}
 
-	if ( !IsIndexInChunk(Pos) )
-	{ return; }
+	if ( IsIndexInChunk(Pos) )
+	{
+		HeightReserved.Add(Pos, Height);
+	}
 
-
-	HeightReserved.Add(Pos, Height);
 }
 

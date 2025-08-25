@@ -39,6 +39,7 @@ public:
     void GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
 	void GetStreamSet(const FIntPoint& Chunk, const TArray<FIntPoint>& Path, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
     float GetHeight( const FVector2D& Location );
+	TPair<FIntPoint, FIntPoint> ChangeChunkPos(const FIntPoint& DefaultChunk, const FIntPoint& DefaultPos, const FIntPoint& TargetChunk);
 
 private:
 	// for debugging & reusing purposes, shown on editor details pannel
@@ -73,7 +74,6 @@ private:
 	bool IsIndexInChunk(const FIntPoint& Index);
 
 	void GetOtherPos(const FIntPoint& DefaultChunk, const FIntPoint& DefaultPos, TArray<TPair<FIntPoint, FIntPoint>>& OutOtherPos);
-	TPair<FIntPoint, FIntPoint> ChangeChunkPos(const FIntPoint& DefaultChunk, const FIntPoint& DefaultPos, const FIntPoint& TargetChunk);
 
 	FVector2D PosToVector2D(const FIntPoint& Chunk, const FIntPoint& Pos);
 

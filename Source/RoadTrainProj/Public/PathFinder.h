@@ -19,6 +19,7 @@ private:
 
     ALandscapeManager* pLM; // don't change member values!!
 
+
     float GetBestGate( const FIntPoint& Chunk, const FIntPoint& NextChunk, const FIntPoint& Pos, FPathNode& OutNode );
 
     // -----------------tools-----------------

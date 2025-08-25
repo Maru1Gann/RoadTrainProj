@@ -15,6 +15,7 @@
 
 
 struct FPerlinNoiseVariables;
+class USplineComponent;
 
 UCLASS()
 class ROADTRAINPROJ_API ALandscapeManager : public AActor
@@ -58,10 +59,16 @@ public:
         FIntPoint End;      // global
     UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 3, ClampMin = "0.0", ClampMax = "100.0") )
 	    float MaxSlope = 30;
-    UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "10.0") )
+    UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "180.0") )
+        float MaxRoadAngle = 15;
+    UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "720"))
+        int32 CircleSampleNum = 180;
+    UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 5, ClampMin = "0.0", ClampMax = "10.0") )
         float SlopePaneltyWeight = 3.0f;
-    UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "1000.0") )
+    UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 6, ClampMin = "0.0", ClampMax = "1000.0") )
         float DirectionPaneltyWeight = 500.0f;
+    UPROPERTY( EditAnywhere, Category = "Path|Mesh")
+        UStaticMesh* RoadMesh;
 
     UFUNCTION(CallInEditor, Category = "Terrain")
         void GenerateLandscape();
@@ -89,6 +96,9 @@ private:
     // tools
     void GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& OutArray);
     FVector GetNodeVector(const FPathNode& Node);
+
+    void AddPathSpline(const FIntPoint& Chunk, const TArray<FIntPoint>& Path);
+    void MakeRoad(USplineComponent* Spline);
 
     void DrawPathDebugPoints(const FIntPoint& Chunk, const TArray<FIntPoint>& Path);
 

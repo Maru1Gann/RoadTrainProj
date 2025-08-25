@@ -3,6 +3,8 @@
 #include "PerlinNoiseVariables.h"
 
 #include "Containers/Map.h" // MultiMap
+#include "Components/SplineComponent.h" // Spline
+#include "Components/SplineMeshComponent.h" // Spline Mesh
 
 #include "DrawDebugHelpers.h"
 
@@ -67,7 +69,9 @@ void ALandscapeManager::Debug()
 	RemoveLandscape();
 
 	PathFinder->FindPathGates(Start, End, PathNodes);
-	
+	if (PathNodes.IsEmpty())
+	{ return; }
+
 	
 	for (auto& Elem : PathNodes)
 	{
@@ -85,31 +89,6 @@ void ALandscapeManager::Debug()
 	for (int32 i = 1; i < PathNodes.Num(); i++)
 	{ PathMap.Add(PathNodes[i].Belong, i); }
 
-
-	//for (auto& Elem : ChunkOrder) // TODO: need to prioritized chunks with paths!! (for continous chunks)
-	//{
-	//	TArray<int32> Indices;
-	//	PathMap.MultiFind(Elem, Indices);
-
-	//	RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-
-	//	if (!Indices.IsEmpty()) // if Chunk Contains Path
-	//	{
-	//		TArray<FIntPoint> Path;
-	//		for (auto& Index : Indices) // get path
-	//		{
-	//			TArray<FIntPoint> TempPath;
-	//			PathFinder->GetPath(PathNodes[Index - 1], PathNodes[Index], TempPath);
-	//			Path.Append(TempPath);
-	//		}
-	//		ChunkBuilder->GetStreamSet(Elem, Path, StreamSet); // flattener version.
-	//		DrawPathDebugPoints(Elem, Path);
-	//	}
-	//	else
-	//	{ ChunkBuilder->GetStreamSet(Elem, StreamSet); } // normal version.
-
-	//	AddChunk(Elem, StreamSet);
-	//}
 
 	TArray<FIntPoint> ChunkWithPath;
 	TArray<FIntPoint> OtherChunks;
@@ -136,10 +115,11 @@ void ALandscapeManager::Debug()
 
 			// continous chunk test.
 
-			if (Index - 1 > 1)
+			if (Index - 2 >= 0)
 			{
 				PathFinder->GetPath(PathNodes[Index - 2], PathNodes[Index - 1], TempPath);
-				Path.Add(TempPath.Last());
+				FIntPoint Point = ChunkBuilder->ChangeChunkPos(PathNodes[Index - 1].Belong, TempPath[TempPath.Num() - 2], Elem).Value;
+				Path.Add(Point);
 			}
 
 			PathFinder->GetPath(PathNodes[Index - 1], PathNodes[Index], TempPath);
@@ -147,14 +127,17 @@ void ALandscapeManager::Debug()
 
 			if (Index + 1 < PathNodes.Num())
 			{
-				PathFinder->GetPath(PathNodes[Index + 1], PathNodes[Index], TempPath);
-				Path.Add(TempPath[0]);
+				PathFinder->GetPath(PathNodes[Index], PathNodes[Index+1], TempPath);
+				FIntPoint Point = ChunkBuilder->ChangeChunkPos(PathNodes[Index + 1].Belong, TempPath[1], Elem).Value;
+				Path.Add(Point);
 			}
 		}
 		ChunkBuilder->GetStreamSet(Elem, Path, StreamSet);
-		DrawPathDebugPoints(Elem, Path);
+		// DrawPathDebugPoints(Elem, Path);
 		AddChunk(Elem, StreamSet);
+		AddPathSpline(Elem, Path);
 	}
+
 	for (auto& Elem : OtherChunks)
 	{
 		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
@@ -305,6 +288,58 @@ FVector ALandscapeManager::GetNodeVector(const FPathNode& Node)
 	Out.Z = GetHeight(FVector2D(Out.X, Out.Y) );
 
 	return Out;
+}
+
+void ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FIntPoint>& Path)
+{
+	ARealtimeMeshActor** ppRMA = Chunks.Find(Chunk);
+	if(!ppRMA)
+	{ return; }
+	
+	ARealtimeMeshActor* pRMA = (*ppRMA);
+
+	USplineComponent* Spline = NewObject<USplineComponent>(pRMA); // add spline component
+	Spline->RegisterComponent(); // register to world.
+	Spline->AttachToComponent( pRMA->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform );
+	Spline->SetRelativeLocation(FVector::ZeroVector);
+	Spline->ClearSplinePoints(false);
+
+	// add spline points.
+	for (auto& Pos : Path)
+	{
+		FIntPoint WorldPos = Chunk * (VerticesPerChunk - 1) + Pos;
+		FVector WorldVector = FVector(WorldPos.X, WorldPos.Y, 0.f) * VertexSpacing;
+		WorldVector.Z = GetHeight(FVector2D(WorldVector.X, WorldVector.Y));
+		Spline->AddSplinePoint( WorldVector, ESplineCoordinateSpace::World );
+	}
+	
+	MakeRoad(Spline);
+}
+
+void ALandscapeManager::MakeRoad(USplineComponent* Spline)
+{
+	if(!this->RoadMesh || !Spline)
+	{ return; }
+
+	for (int32 i = 1; i < Spline->GetNumberOfSplinePoints() - 2; i++)
+	{
+		USplineMeshComponent* SplineMesh = NewObject<USplineMeshComponent>(Spline->GetOwner());
+		SplineMesh->RegisterComponent();
+		SplineMesh->AttachToComponent(Spline, FAttachmentTransformRules::KeepRelativeTransform);
+		SplineMesh->SetRelativeLocation(FVector::ZeroVector);
+		
+		FVector StartPos, StartTangent, EndPos, EndTangent;
+		StartPos = Spline->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::World);
+		StartTangent = Spline->GetTangentAtSplinePoint(i, ESplineCoordinateSpace::World);
+		EndPos = Spline->GetLocationAtSplinePoint(i + 1, ESplineCoordinateSpace::World);
+		EndTangent = Spline->GetTangentAtSplinePoint(i + 1, ESplineCoordinateSpace::World);
+
+
+		SplineMesh->SetStaticMesh(RoadMesh);
+		SplineMesh->SetStartAndEnd(StartPos, StartTangent, EndPos, EndTangent);
+		SplineMesh->SetStartScale(FVector2D(2.0f, 5.0f));
+		SplineMesh->SetEndScale(FVector2D(2.0f, 5.0f));
+	}
 }
 
 void ALandscapeManager::DrawPathDebugPoints(const FIntPoint& Chunk, const TArray<FIntPoint>& Path)
