@@ -11,6 +11,8 @@
 #include "PathFinder.h"
 #include "ChunkBuilder.h"
 
+#include "PathFinder2.h"
+
 #include "LandscapeManager.generated.h"
 
 
@@ -63,9 +65,11 @@ public:
         float MaxRoadAngle = 15;
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "720"))
         int32 CircleSampleNum = 180;
-    UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 5, ClampMin = "0.0", ClampMax = "10.0") )
+    UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 5, ClampMin = "1.0", ClampMax = "1000.0"))
+        float StepLength = 1000.0f;
+    UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 6, ClampMin = "0.0", ClampMax = "10.0") )
         float SlopePaneltyWeight = 3.0f;
-    UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 6, ClampMin = "0.0", ClampMax = "1000.0") )
+    UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 7, ClampMin = "0.0", ClampMax = "1000.0") )
         float DirectionPaneltyWeight = 500.0f;
     UPROPERTY( EditAnywhere, Category = "Path|Mesh")
         UStaticMesh* RoadMesh;
@@ -76,6 +80,8 @@ public:
         void RemoveLandscape();
     UFUNCTION(CallInEditor, Category = "Terrain")
         void Debug();
+    UFUNCTION(CallInEditor, Category = "Terrain")
+        void Debug2();
 
     float GetHeight(const FVector2D& Location);
     void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
@@ -89,6 +95,9 @@ private:
 
     std::unique_ptr<FPathFinder> PathFinder;
     TArray<FPathNode> PathNodes;
+
+    std::unique_ptr<FPathFinder2> PathFinder2;
+    TArray<FVector2D> Paths;
 
 
     TArray<FIntPoint> ChunkOrder;

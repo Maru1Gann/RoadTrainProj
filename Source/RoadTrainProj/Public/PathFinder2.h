@@ -9,6 +9,7 @@ struct FPathPoint;
 
 class FPathFinder2
 {
+    friend class ALandscapeManager;
 
 public:
     FPathFinder2(ALandscapeManager* pLM);
@@ -19,6 +20,7 @@ private:
     ALandscapeManager* pLM; // don't change member values!!
     float CosMaxAngle;
     float MaxSlopeSquared;
+    float StepLength;
 
     TArray<FVector2D> CirclePoints;
 

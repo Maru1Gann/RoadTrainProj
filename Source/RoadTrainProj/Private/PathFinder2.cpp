@@ -2,6 +2,8 @@
 #include "PathFinder2.h"
 #include "LandscapeManager.h"
 
+#include "DrawDebugHelpers.h"
+
 #include <limits>
 const float INFLOAT = std::numeric_limits<float>::infinity(); // float INF for obstacles
 
@@ -9,7 +11,9 @@ FPathFinder2::FPathFinder2(ALandscapeManager* pLM) : pLM(pLM)
 {
 	float RadAngle = FMath::DegreesToRadians(pLM->MaxRoadAngle);
 	CosMaxAngle = FMath::Cos(RadAngle);
+	UE_LOG(LogTemp, Warning, TEXT("CosMaxAngle %f"), CosMaxAngle);
 	MaxSlopeSquared = FMath::Square(pLM->MaxSlope);
+	StepLength = pLM->StepLength;
 
 	GetCirclePoints(pLM->CircleSampleNum);
 }
@@ -28,7 +32,7 @@ bool FPathFinder2::GetPath(const FIntPoint& Chunk, const FGate& StartGate, const
 	FVector2D LocalStart = FVector2D(StartGate.B.X, StartGate.B.Y) - Offset;
 	FVector2D LocalEnd = FVector2D(EndGate.A.X, EndGate.A.Y) - Offset;
 	FVector VecEnd = EndGate.A;
-
+	
 	TArray<FPathPoint> PathPoints;
 	PathPoints.Add(FPathPoint(LocalStartFrom, 0, -1));
 	FPathPoint StartPoint(LocalStart, 0, PathPoints.Num()-1 );
@@ -40,19 +44,30 @@ bool FPathFinder2::GetPath(const FIntPoint& Chunk, const FGate& StartGate, const
 	TArray<TPair<float, int32>> Frontier; // key == priority. value == index of the PathPoint
 	auto Predicate = [](const TPair<float, int32>& A, const TPair<float, int32>& B) { return A.Key < B.Key; }; // min heap.
 	Frontier.Heapify(Predicate); // context purpose.
-	Frontier.Add(TPair<float, int32>(0, PathPoints.Num()-1));
+	Frontier.HeapPush(TPair<float, int32>(0, PathPoints.Num()-1), Predicate);
+
+	int32 Counter = 0;
 
 	while ( !Frontier.IsEmpty() )
 	{
+		if (Counter >= 100)
+		{
+			UE_LOG(LogTemp, Display, TEXT("GetPath Counter %d"), Counter);
+			break;
+		}
+		Counter++;
+
 		TPair<float, int32> Current;
-		Frontier.HeapPop(Current);
+		Frontier.HeapPop(Current, Predicate);
 
 		FPathPoint PointNow = PathPoints[Current.Value];
 		FPathPoint PointLast = PathPoints[PointNow.CameFrom];
 
+		DrawDebugPoint(pLM->GetWorld(), ConvertTo3D(Chunk, PointNow.Loc), 5.0f, FColor::Cyan, true);
+
 		// met goal conditions ( if goal is in radius, and angle and slope ok )
 		FVector VecNow = ConvertTo3D(Chunk, PointNow.Loc);
-		if ( FVector::DistSquared(VecNow, VecEnd) <= FMath::Square(pLM->VertexSpacing) )
+		if ( FVector::DistSquaredXY(VecNow, VecEnd) <= FMath::Square(pLM->VertexSpacing) )
 		{
 			// now check angle and slope
 			float SlopeSquared = GetSlopeSquared(VecNow, VecEnd);
@@ -70,12 +85,13 @@ bool FPathFinder2::GetPath(const FIntPoint& Chunk, const FGate& StartGate, const
 				}
 
 				OutPath.Empty();
-				OutPath.Reserve(ReversePath.Num());
+				OutPath.SetNum(ReversePath.Num());
 				for (int32 i = 0; i < ReversePath.Num() - 1; i++)
 				{ OutPath[i] = ReversePath[ReversePath.Num() - 1 - i]; }
 				return true;
 			}
 		}
+		// ก่ met goal conditions 
 
 		// didn't meet goal.
 		TArray<FVector2D> Neighbors;
@@ -85,11 +101,17 @@ bool FPathFinder2::GetPath(const FIntPoint& Chunk, const FGate& StartGate, const
 			// FVector VecNow = ConvertTo3D(Chunk, PointNow.Loc);
 			FVector VecNext = ConvertTo3D(Chunk, LocNext);
 
+			// check if in boundary
+			if (GetChunk(VecNext) != Chunk)
+			{
+				continue;
+			}
+
 			// checking slope and angle(road curvature)
 			float SlopeSquared = GetSlopeSquared(VecNow, VecNext);
 			float CosAngle = GetCosAngle(PointLast.Loc, PointNow.Loc, LocNext);
 			if ( SlopeSquared > MaxSlopeSquared || CosAngle < CosMaxAngle ) // CosMaxAngle == -1 when MaxAngle == 180
-			{ continue; }
+			{  continue; }
 
 			float NewCost = PointNow.Cost + FVector::DistSquared(VecNow, VecNext);
 			FPathPoint PointNext(LocNext, NewCost, Current.Value);
@@ -112,13 +134,15 @@ bool FPathFinder2::GetPath(const FIntPoint& Chunk, const FGate& StartGate, const
 				PathPoints.Add(PointNext);
 			}
 
-			float Priority = NewCost + FVector::DistSquared( VecNext, ConvertTo3D(Chunk, LocalEnd) ); // heuristic
+			float Priority = NewCost; // FVector::DistSquared(VecNext, ConvertTo3D(Chunk, LocalEnd)); // heuristic
 			// add slope and angle bias
-			float Bias = SlopeSquared * pLM->SlopePaneltyWeight + (1 - CosAngle) * pLM->DirectionPaneltyWeight;
-			Frontier.HeapPush(TPair<float, int32>(Priority, PathPoints.Num() - 1));
+			//float Bias = SlopeSquared * pLM->SlopePaneltyWeight + (1 - CosAngle) * pLM->DirectionPaneltyWeight;
+			//Priority += Bias;
+			Frontier.HeapPush(TPair<float, int32>(Priority, PathPoints.Num() - 1), Predicate);
 		}
 	}
 
+	UE_LOG(LogTemp, Warning, TEXT("GetPath while ended, Counter %d"), Counter);
 	return false;
 }
 
@@ -131,7 +155,7 @@ void FPathFinder2::GetCirclePoints(const int32& Num)
 
 	CirclePoints.Empty();
 	CirclePoints.Reserve(Num);
-	float Rad = pLM->VertexSpacing;
+	float Rad = StepLength;
 	float AngleDivided = 2 * PI / Num;
 	
 	for (int32 i = 0; i < Num; i++)
@@ -154,7 +178,7 @@ FVector FPathFinder2::ConvertTo3D(const FIntPoint& Chunk, const FVector2D& Local
 {
 	FVector2D Offset = FVector2D(Chunk.X, Chunk.Y) * pLM->VertexSpacing * (pLM->VerticesPerChunk - 1);
 	float Height = pLM->GetHeight(Offset + Local);
-	return FVector(Offset.X + Local.X, Offset.Y + Local.Y, Height);
+	return FVector(Local.X, Local.Y, Height);
 }
 
 FIntPoint FPathFinder2::SnapToGrid(const FVector2D& Pos)
@@ -186,10 +210,18 @@ float FPathFinder2::GetSlopeSquared(const FVector& A, const FVector& B)
 
 void FPathFinder2::GetNeighbors(const FVector2D& PosNow, TArray<FVector2D>& Neighbors) 
 {
+	float ChunkLength = (pLM->VerticesPerChunk - 1) * pLM->VertexSpacing;
+	Neighbors.Empty();
 	for (auto& Point : CirclePoints)
 	{
 		FVector2D PosNext = PosNow + Point;
-		Neighbors.Add(PosNext);
+		if (PosNext.X < 0 || PosNext.X > ChunkLength
+			|| PosNext.Y < 0 || PosNext.Y > ChunkLength)
+		{ continue; }
+		else 
+		{
+			Neighbors.Add(PosNext);
+		}
 	}
 }
 

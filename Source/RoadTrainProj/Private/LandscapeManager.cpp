@@ -29,6 +29,7 @@ void ALandscapeManager::OnConstruction(const FTransform& Transform)
 	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
 	ChunkBuilder = std::make_unique<FChunkBuilder>(this, this->Material);
 	PathFinder = std::make_unique<FPathFinder>(this);
+	PathFinder2 = std::make_unique<FPathFinder2>(this);
 }
 
 void ALandscapeManager::Tick(float DeltaTime)
@@ -56,11 +57,12 @@ void ALandscapeManager::GenerateLandscape()
 
 void ALandscapeManager::RemoveLandscape()
 {
+	FlushPersistentDebugLines(GetWorld());
 	for (auto& Elem : Chunks)
 	{
 		RemoveChunk(Elem.Key);
 	}
-
+	Chunks.Empty();
 }
 
 void ALandscapeManager::Debug()
@@ -147,6 +149,48 @@ void ALandscapeManager::Debug()
 
 }
 
+void ALandscapeManager::Debug2()
+{
+	FIntPoint Chunk(0, 0);
+	FVector2D StartPoint(10, 10);
+	FVector2D EndPoint(ChunkLength - 10, ChunkLength - 10);
+	FGate StartGate(FVector(StartPoint.X, StartPoint.Y, GetHeight(StartPoint)));
+	FGate EndGate(FVector(EndPoint.X, EndPoint.Y, GetHeight(EndPoint)));
+
+	RemoveLandscape();
+	GenerateLandscape();
+
+	FlushPersistentDebugLines(GetWorld());
+	for (auto& Elem : PathFinder2->CirclePoints)
+	{
+		DrawDebugPoint(
+			this->GetWorld(),
+			FVector(Elem.X, Elem.Y, GetHeight(Elem)),
+			5.f,
+			FColor::Red,
+			true
+		);
+	}
+
+	Paths.Empty();
+	bool IsPath = PathFinder2->GetPath(Chunk, StartGate, EndGate, Paths);
+	UE_LOG(LogTemp, Warning, TEXT("GetPathDone %d"), IsPath);
+
+	DrawDebugPoint(GetWorld(), StartGate.A, 10.f, FColor::Blue, true);
+	DrawDebugPoint(GetWorld(), EndGate.A, 10.f, FColor::Blue, true);
+
+	for (auto& Elem : Paths)
+	{
+		DrawDebugPoint(
+			this->GetWorld(),
+			FVector(Elem.X, Elem.Y, GetHeight(Elem)),
+			5.f,
+			FColor::White,
+			true
+		);
+	}
+}
+
 float ALandscapeManager::GetHeight( const FVector2D& Location )
 {
 	return ChunkBuilder->GetHeight(Location);
@@ -216,7 +260,6 @@ void ALandscapeManager::RemoveChunk(const FIntPoint& Chunk)
 	if (pRMA)
 	{
 		(*pRMA)->Destroy();
-		Chunks.Remove(Chunk);
 	}
 
 }
