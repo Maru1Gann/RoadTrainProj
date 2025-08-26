@@ -98,4 +98,6 @@ private:
     void AddPathSpline(const FIntPoint& Chunk, const TArray<FIntPoint>& Path);
     void MakeRoad(USplineComponent* Spline);
 
+    FVector GridToVector(const FIntPoint& GlobalGrid);
+
 };

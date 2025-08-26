@@ -65,6 +65,46 @@ void ALandscapeManager::RemoveLandscape()
 
 void ALandscapeManager::Debug()
 {
+	FlushPersistentDebugLines(GetWorld());
+	RemoveLandscape();
+	GenerateLandscape();
+
+	FIntPoint A, B;
+	A = PathFinder->GetChunk(Start);
+	B = PathFinder->GetChunk(End);
+
+	UE_LOG(LogTemp, Warning, TEXT("A: %s, B: %s"), *A.ToString(), *B.ToString());
+
+	DrawDebugPoint(
+		GetWorld(),
+		GridToVector(Start),
+		3.5f,
+		FColor::Cyan,
+		true
+	);
+
+	DrawDebugPoint(
+		GetWorld(),
+		GridToVector(End),
+		3.5f,
+		FColor::Cyan,
+		true
+	);
+
+	TArray<FIntPoint> OutPath;
+	PathFinder->GetPath(FGate(Start), FGate(End), OutPath);
+
+	for(auto& Elem : OutPath)
+	{
+		DrawDebugPoint(
+			GetWorld(),
+			GridToVector(Elem),
+			3.5f,
+			FColor::Cyan,
+			true
+		);
+	}
+	
 
 }
 
@@ -251,4 +291,16 @@ void ALandscapeManager::MakeRoad(USplineComponent* Spline)
 		SplineMesh->SetStartScale(FVector2D(2.0f, 5.0f));
 		SplineMesh->SetEndScale(FVector2D(2.0f, 5.0f));
 	}
+}
+
+// returns center of grid.
+FVector ALandscapeManager::GridToVector(const FIntPoint& GlobalGrid)
+{
+	FVector Out;
+	Out.X = GlobalGrid.X  * VertexSpacing;
+	Out.Y = GlobalGrid.Y  * VertexSpacing;
+	Out.X += VertexSpacing / 2;
+	Out.Y += VertexSpacing / 2;
+	Out.Z = GetHeight(FVector2D(Out.X, Out.Y));
+	return Out;
 }
