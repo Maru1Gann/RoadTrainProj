@@ -69,30 +69,8 @@ void ALandscapeManager::Debug()
 	RemoveLandscape();
 	GenerateLandscape();
 
-	FIntPoint A, B;
-	A = PathFinder->GetChunk(Start);
-	B = PathFinder->GetChunk(End);
-
-	UE_LOG(LogTemp, Warning, TEXT("A: %s, B: %s"), *A.ToString(), *B.ToString());
-
-	DrawDebugPoint(
-		GetWorld(),
-		GridToVector(Start),
-		3.5f,
-		FColor::Cyan,
-		true
-	);
-
-	DrawDebugPoint(
-		GetWorld(),
-		GridToVector(End),
-		3.5f,
-		FColor::Cyan,
-		true
-	);
-
 	TArray<FIntPoint> OutPath;
-	PathFinder->GetPath(FGate(Start), FGate(End), OutPath);
+	PathFinder->GetPath(FGate(Start), FGate(End), OutPath, DrawPathDebug);
 
 	for(auto& Elem : OutPath)
 	{

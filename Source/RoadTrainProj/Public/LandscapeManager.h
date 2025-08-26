@@ -60,14 +60,10 @@ public:
 	    float MaxSlope = 30;
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "180.0") )
         float MaxRoadAngle = 15;
-    UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "720"))
-        int32 CircleSampleNum = 180;
-    UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 5, ClampMin = "1.0", ClampMax = "1000.0"))
-        float StepLength = 1000.0f;
-    UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 6, ClampMin = "0.0", ClampMax = "10.0") )
-        float SlopePaneltyWeight = 3.0f;
-    UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 7, ClampMin = "0.0", ClampMax = "1000.0") )
-        float DirectionPaneltyWeight = 500.0f;
+    UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 5, ClampMin = "0"))
+        int32 CounterHardLock = 1000;
+    UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 6))
+        bool DrawPathDebug = false;
     UPROPERTY( EditAnywhere, Category = "Path|Mesh")
         UStaticMesh* RoadMesh;
 
@@ -78,9 +74,12 @@ public:
     UFUNCTION(CallInEditor, Category = "Terrain")
         void Debug();
 
-    float GetHeight(const FVector2D& Location);
     void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
     void RemoveChunk(const FIntPoint& Chunk);
+
+    // tools
+    float GetHeight(const FVector2D& Location);
+    FVector GridToVector(const FIntPoint& GlobalGrid);
 
 private:
 
@@ -98,6 +97,6 @@ private:
     void AddPathSpline(const FIntPoint& Chunk, const TArray<FIntPoint>& Path);
     void MakeRoad(USplineComponent* Spline);
 
-    FVector GridToVector(const FIntPoint& GlobalGrid);
+    
 
 };

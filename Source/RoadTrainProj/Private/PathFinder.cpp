@@ -1,16 +1,18 @@
 
 #include "PathFinder.h"
 #include "LandscapeManager.h"
+#include "DrawDebugHelpers.h"
 
 #include <limits>
 const float INFLOAT = std::numeric_limits<float>::infinity(); // float INF for obstacles
+const float SQRT2 = FMath::Sqrt(2.0f);
 
 FPathFinder::FPathFinder( ALandscapeManager* pLM ) : pLM( pLM )
 {
 }
 
 // find path, but do it on (0,0) local chunk.
-bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<FIntPoint>& OutPath)
+bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<FIntPoint>& OutPath, bool DrawDebug)
 {
 	FIntPoint Chunk = GetChunk(StartGate.B);
 	if (Chunk != GetChunk(EndGate.A))
@@ -66,14 +68,23 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 		Elem = false;
 	}
 	Visited[GetFlatIndex(Start)] = true;
-	Frontier[GetFlatIndex(Start)] = FNode(0, GetUnitDistSqr(Start, End), NoConnection, true, NoConnection, NoConnection);
+	Frontier[GetFlatIndex(Start)] = FNode(0, GetMoveCost(Start,End), NoConnection, true, NoConnection, NoConnection);
 
 	FIntPoint OpenListStart = Start;
 	FIntPoint OpenListEnd = Start;
 
+	int32 Counter = 0;
+
 	// start A*
 	while (OpenListStart != NoConnection && OpenListEnd != NoConnection)
 	{
+		if (Counter >= pLM->CounterHardLock)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("CounterLockHit, %d"), Counter);
+			break;
+		}
+		Counter++;
+
 		// find lowest GCost node. (highest priority node)
 		float LowestCost = INFLOAT;
 		FIntPoint Current = NoConnection;
@@ -93,22 +104,36 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 			return false;
 		}
 
+		if (DrawDebug) // false by defualt
+		{
+			DrawDebugPoint(
+				pLM->GetWorld(),
+				pLM->GridToVector(LocalToGlobal(Chunk, Current)),
+				3.0f,
+				FColor::Red,
+				true
+			);
+		}
+
 
 		// ----------if met goal---------
 		if (Current == End)
 		{
 			// do data passing
 			TArray<FIntPoint> ReversePath;
+			ReversePath.Empty();
 			while (Current != NoConnection)
 			{
 				ReversePath.Add(Current);
 				Current = Frontier[GetFlatIndex(Current)].CameFrom;
 			}
+			OutPath.Empty();
 			OutPath.SetNum(ReversePath.Num());
-			for (int32 i = 0; i < ReversePath.Num() - 1; i++)
+			for (int32 i = 0; i < ReversePath.Num(); i++)
 			{
 				OutPath[i] = LocalToGlobal( Chunk, ReversePath[ReversePath.Num() - 1 - i] );
 			}
+			UE_LOG(LogTemp, Warning, TEXT("WhileCount, %d"), Counter);
 			return true;
 		}
 		
@@ -125,15 +150,15 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 			}
 
 			// continue if 'visited && lower cost'
-			float NewCost = NodeNow.GCost + GetUnitDistSqr(Current, Neighbor);
-			float Heuristic = GetUnitDistSqr(Neighbor, End);
+			float NewCost = NodeNow.GCost + GetMoveCost(Current, Neighbor);
 			if (Visited[GetFlatIndex(Neighbor)] == true
 				&&
-				Frontier[GetFlatIndex(Neighbor)].GCost < NewCost )
+				Frontier[GetFlatIndex(Neighbor)].GCost <= NewCost + 0.01 ) // add to ignore irrelavent difference
 			{
 				continue;
 			}
 			
+			float Heuristic = GetMoveCost(Neighbor, End);
 			FNode& NodeNext = Frontier[GetFlatIndex(Neighbor)];
 			NodeNext.GCost = NewCost;
 			NodeNext.FCost = NewCost + Heuristic;
@@ -141,11 +166,14 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 			Visited[GetFlatIndex(Neighbor)] = true; // visited.
 
 			// add this to open list
-			Frontier[GetFlatIndex(OpenListEnd)].Next = Neighbor;
-			NodeNext.Prev = OpenListEnd;
-			NodeNext.Next = NoConnection;
-			NodeNext.IsOpen = true;
-			OpenListEnd = Neighbor;
+			if (!NodeNext.IsOpen)
+			{
+				Frontier[GetFlatIndex(OpenListEnd)].Next = Neighbor;
+				NodeNext.Prev = OpenListEnd;
+				NodeNext.Next = NoConnection;
+				NodeNext.IsOpen = true;
+				OpenListEnd = Neighbor;
+			}
 		}
 
 		// update list start and end
@@ -213,6 +241,13 @@ FIntPoint FPathFinder::GetChunk(const FIntPoint& GlobalGrid)
 	return Chunk;
 }
 
+float FPathFinder::GetMoveCost(const FIntPoint& A, const FIntPoint& B)
+{
+	int dx = FMath::Abs(A.X - B.X);
+	int dy = FMath::Abs(A.Y - B.Y);
+	return (dx + dy) + (SQRT2 - 2) * FMath::Min(dx, dy); // manhattan distance - diagonal movement
+}
+
 int32 FPathFinder::GetFlatIndex(const FIntPoint& Index2D)
 {
 	int32 FlatIndex = Index2D.Y * (pLM->VerticesPerChunk - 1) + Index2D.X;
@@ -231,7 +266,6 @@ int32 FPathFinder::GetUnitDistSqr(const FIntPoint& A, const FIntPoint& B)
 {
 	return FMath::Square(B.X - A.X) + FMath::Square(B.Y - A.Y);
 }
-
 
 void FPathFinder::GetNeighbors(const FIntPoint& A, TArray<FIntPoint>& OutNeighbors)
 {
@@ -253,7 +287,9 @@ void FPathFinder::GetNeighbors(const FIntPoint& A, TArray<FIntPoint>& OutNeighbo
 bool FPathFinder::IsInBoundary(const FIntPoint& A)
 {
 	int32 Boundary = pLM->VerticesPerChunk - 1;
-	if (A.X >= 0 && A.X < Boundary && A.Y >= 0 && A.Y < Boundary)
+	if (A.X >= 0 && A.X < Boundary 
+		&& 
+		A.Y >= 0 && A.Y < Boundary)
 	{ return true; }
 	else
 	{ return false; }
