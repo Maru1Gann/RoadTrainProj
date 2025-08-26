@@ -7,11 +7,8 @@
 #include "RealtimeMeshActor.h"          // AReltimeMeshActor
 #include "Mesh/RealtimeMeshAlgo.h"      // RealtimeMeshAlgo
 
-#include "PathNode.h"
 #include "PathFinder.h"
 #include "ChunkBuilder.h"
-
-#include "PathFinder2.h"
 
 #include "LandscapeManager.generated.h"
 
@@ -80,8 +77,6 @@ public:
         void RemoveLandscape();
     UFUNCTION(CallInEditor, Category = "Terrain")
         void Debug();
-    UFUNCTION(CallInEditor, Category = "Terrain")
-        void Debug2();
 
     float GetHeight(const FVector2D& Location);
     void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
@@ -94,21 +89,13 @@ private:
     float ChunkLength;
 
     std::unique_ptr<FPathFinder> PathFinder;
-    TArray<FPathNode> PathNodes;
-
-    std::unique_ptr<FPathFinder2> PathFinder2;
-    TArray<FVector2D> Paths;
-
 
     TArray<FIntPoint> ChunkOrder;
 
     // tools
     void GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& OutArray);
-    FVector GetNodeVector(const FPathNode& Node);
 
     void AddPathSpline(const FIntPoint& Chunk, const TArray<FIntPoint>& Path);
     void MakeRoad(USplineComponent* Spline);
-
-    void DrawPathDebugPoints(const FIntPoint& Chunk, const TArray<FIntPoint>& Path);
 
 };

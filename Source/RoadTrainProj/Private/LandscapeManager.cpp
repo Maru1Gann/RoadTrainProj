@@ -29,7 +29,6 @@ void ALandscapeManager::OnConstruction(const FTransform& Transform)
 	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
 	ChunkBuilder = std::make_unique<FChunkBuilder>(this, this->Material);
 	PathFinder = std::make_unique<FPathFinder>(this);
-	PathFinder2 = std::make_unique<FPathFinder2>(this);
 }
 
 void ALandscapeManager::Tick(float DeltaTime)
@@ -43,7 +42,6 @@ void ALandscapeManager::BeginPlay()
 	Super::BeginPlay();
 
 }
-
 
 void ALandscapeManager::GenerateLandscape()
 {
@@ -67,129 +65,9 @@ void ALandscapeManager::RemoveLandscape()
 
 void ALandscapeManager::Debug()
 {
-	FlushPersistentDebugLines(GetWorld());
-	RemoveLandscape();
-
-	PathFinder->FindPathGates(Start, End, PathNodes);
-	if (PathNodes.IsEmpty())
-	{ return; }
-
-	
-	for (auto& Elem : PathNodes)
-	{
-		DrawDebugPoint
-		(
-			GetWorld(),
-			GetNodeVector(Elem),
-			15.f,
-			FColor::Blue,
-			true
-		);
-	}
-
-	TMultiMap<FIntPoint, int32> PathMap;
-	for (int32 i = 1; i < PathNodes.Num(); i++)
-	{ PathMap.Add(PathNodes[i].Belong, i); }
-
-
-	TArray<FIntPoint> ChunkWithPath;
-	TArray<FIntPoint> OtherChunks;
-	for (auto& Elem : ChunkOrder)
-	{
-		if (PathMap.Contains(Elem))
-		{ 
-			ChunkWithPath.Add(Elem); 
-		}
-		else
-		{ OtherChunks.Add(Elem); }
-	}
-
-	for (auto& Elem : ChunkWithPath)
-	{
-		TArray<int32> Indices;
-		PathMap.MultiFind(Elem, Indices);
-		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-
-		TArray<FIntPoint> Path;
-		for (auto& Index : Indices)
-		{
-			TArray<FIntPoint> TempPath;
-
-			// continous chunk test.
-
-			if (Index - 2 >= 0)
-			{
-				PathFinder->GetPath(PathNodes[Index - 2], PathNodes[Index - 1], TempPath);
-				FIntPoint Point = ChunkBuilder->ChangeChunkPos(PathNodes[Index - 1].Belong, TempPath[TempPath.Num() - 2], Elem).Value;
-				Path.Add(Point);
-			}
-
-			PathFinder->GetPath(PathNodes[Index - 1], PathNodes[Index], TempPath);
-			Path.Append(TempPath);
-
-			if (Index + 1 < PathNodes.Num())
-			{
-				PathFinder->GetPath(PathNodes[Index], PathNodes[Index+1], TempPath);
-				FIntPoint Point = ChunkBuilder->ChangeChunkPos(PathNodes[Index + 1].Belong, TempPath[1], Elem).Value;
-				Path.Add(Point);
-			}
-		}
-		ChunkBuilder->GetStreamSet(Elem, Path, StreamSet);
-		// DrawPathDebugPoints(Elem, Path);
-		AddChunk(Elem, StreamSet);
-		AddPathSpline(Elem, Path);
-	}
-
-	for (auto& Elem : OtherChunks)
-	{
-		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-		ChunkBuilder->GetStreamSet(Elem, StreamSet);
-		AddChunk(Elem, StreamSet);
-	}
 
 }
 
-void ALandscapeManager::Debug2()
-{
-	FIntPoint Chunk(0, 0);
-	FVector2D StartPoint(10, 10);
-	FVector2D EndPoint(ChunkLength - 10, ChunkLength - 10);
-	FGate StartGate(FVector(StartPoint.X, StartPoint.Y, GetHeight(StartPoint)));
-	FGate EndGate(FVector(EndPoint.X, EndPoint.Y, GetHeight(EndPoint)));
-
-	RemoveLandscape();
-	GenerateLandscape();
-
-	FlushPersistentDebugLines(GetWorld());
-	for (auto& Elem : PathFinder2->CirclePoints)
-	{
-		DrawDebugPoint(
-			this->GetWorld(),
-			FVector(Elem.X, Elem.Y, GetHeight(Elem)),
-			5.f,
-			FColor::Red,
-			true
-		);
-	}
-
-	Paths.Empty();
-	bool IsPath = PathFinder2->GetPath(Chunk, StartGate, EndGate, Paths);
-	UE_LOG(LogTemp, Warning, TEXT("GetPathDone %d"), IsPath);
-
-	DrawDebugPoint(GetWorld(), StartGate.A, 10.f, FColor::Blue, true);
-	DrawDebugPoint(GetWorld(), EndGate.A, 10.f, FColor::Blue, true);
-
-	for (auto& Elem : Paths)
-	{
-		DrawDebugPoint(
-			this->GetWorld(),
-			FVector(Elem.X, Elem.Y, GetHeight(Elem)),
-			5.f,
-			FColor::White,
-			true
-		);
-	}
-}
 
 float ALandscapeManager::GetHeight( const FVector2D& Location )
 {
@@ -323,16 +201,6 @@ void ALandscapeManager::GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& 
 	return;
 }
 
-FVector ALandscapeManager::GetNodeVector(const FPathNode& Node)
-{
-	FVector Out;
-	Out = FVector(Node.Belong.X, Node.Belong.Y, 0.f) * ChunkLength;
-	Out += FVector(Node.Pos.X, Node.Pos.Y, 0.f) * VertexSpacing;
-	Out.Z = GetHeight(FVector2D(Out.X, Out.Y) );
-
-	return Out;
-}
-
 void ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FIntPoint>& Path)
 {
 	ARealtimeMeshActor** ppRMA = Chunks.Find(Chunk);
@@ -382,20 +250,5 @@ void ALandscapeManager::MakeRoad(USplineComponent* Spline)
 		SplineMesh->SetStartAndEnd(StartPos, StartTangent, EndPos, EndTangent);
 		SplineMesh->SetStartScale(FVector2D(2.0f, 5.0f));
 		SplineMesh->SetEndScale(FVector2D(2.0f, 5.0f));
-	}
-}
-
-void ALandscapeManager::DrawPathDebugPoints(const FIntPoint& Chunk, const TArray<FIntPoint>& Path)
-{
-	for (int32 i = 0; i < Path.Num(); i++)
-	{
-		DrawDebugPoint
-		(
-			GetWorld(),
-			GetNodeVector(FPathNode(Chunk, Chunk, Path[i])),
-			5.f,
-			FColor::White,
-			true
-		);
 	}
 }
