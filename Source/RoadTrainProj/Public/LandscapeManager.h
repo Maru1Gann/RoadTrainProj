@@ -80,6 +80,8 @@ public:
     // tools
     float GetHeight(const FVector2D& Location);
     FVector GridToVector(const FIntPoint& GlobalGrid);
+    FIntPoint GetChunk(const FIntPoint& GlobalGrid);
+
 
 private:
 

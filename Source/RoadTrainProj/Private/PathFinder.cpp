@@ -9,6 +9,7 @@ const float SQRT2 = FMath::Sqrt(2.0f);
 
 FPathFinder::FPathFinder( ALandscapeManager* pLM ) : pLM( pLM )
 {
+	MaxSlopeTanSqr = FMath::Square(pLM->MaxSlope / 100.f);
 }
 
 // find path, but do it on (0,0) local chunk.
@@ -68,7 +69,7 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 		Elem = false;
 	}
 	Visited[GetFlatIndex(Start)] = true;
-	Frontier[GetFlatIndex(Start)] = FNode(0, GetMoveCost(Start,End), NoConnection, true, NoConnection, NoConnection);
+	Frontier[GetFlatIndex(Start)] = FNode(0, GetMoveCost(Chunk, Start, End), NoConnection, true, NoConnection, NoConnection);
 
 	FIntPoint OpenListStart = Start;
 	FIntPoint OpenListEnd = Start;
@@ -88,7 +89,6 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 		// find lowest GCost node. (highest priority node)
 		float LowestCost = INFLOAT;
 		FIntPoint Current = NoConnection;
-
 		for (FIntPoint Finder = OpenListStart; Finder != NoConnection; Finder = Frontier[GetFlatIndex(Finder)].Next)
 		{
 			FNode& FinderNode = Frontier[GetFlatIndex(Finder)];
@@ -98,6 +98,7 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 				LowestCost = FinderNode.FCost;
 			}
 		}
+		// now Current == LowestCost LocalGrid in open list
 
 		if (Current == NoConnection) // something went off.
 		{
@@ -143,14 +144,15 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 		GetNeighbors(Current, Neighbors);
 		for (auto& Neighbor : Neighbors)
 		{
+
 			// continue if blocked (Check slope)
-			if ( !IsInBoundary(Neighbor) )
+			if ( !IsInBoundary(Neighbor) || GetTanSqr(Chunk, Current, Neighbor) > MaxSlopeTanSqr )
 			{
 				continue;
 			}
 
 			// continue if 'visited && lower cost'
-			float NewCost = NodeNow.GCost + GetMoveCost(Current, Neighbor);
+			float NewCost = NodeNow.GCost + GetMoveCost(Chunk, Current, Neighbor);
 			if (Visited[GetFlatIndex(Neighbor)] == true
 				&&
 				Frontier[GetFlatIndex(Neighbor)].GCost <= NewCost + 0.01 ) // add to ignore irrelavent difference
@@ -158,7 +160,7 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 				continue;
 			}
 			
-			float Heuristic = GetMoveCost(Neighbor, End);
+			float Heuristic = GetMoveCost(Chunk, Neighbor, End);
 			FNode& NodeNext = Frontier[GetFlatIndex(Neighbor)];
 			NodeNext.GCost = NewCost;
 			NodeNext.FCost = NewCost + Heuristic;
@@ -205,10 +207,100 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 	return false; // no path found
 }
 
+void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
+{
+	if (Path.IsEmpty() || Path.Num() < 3)
+	{
+		return;
+	}
+
+	TArray<FIntPoint> SmoothPath;
+	int32 CheckPoint = 0;
+	int32 CurrentPoint = 1;
+	SmoothPath.Add(Path[CheckPoint]);
+
+	while (CurrentPoint < Path.Num())
+	{
+		if (IsWalkable(Chunk, Path[CheckPoint], Path[CurrentPoint]))
+		{
+			CurrentPoint++;
+		}
+		else // last point was walkable.
+		{
+			CheckPoint = CurrentPoint - 1;
+			SmoothPath.Add(Path[CheckPoint]);
+			CurrentPoint++;
+		}
+	}
+	SmoothPath.Add(Path.Last());
+	
+	Path.Empty();
+
+	// dogshits
+	TSet<FIntPoint> TwoBlock;
+	for (int32 i = -2; i <= 2; i++)
+	{
+		for (int32 j = -2; j <= 2; j++)
+		{
+			TwoBlock.Add(FIntPoint(j, i));
+		}
+	}
+
+	for (int32 i = 0; i < SmoothPath.Num() - 1; i++)
+	{
+		Path.Add(SmoothPath[i]);
+		int32 temp = i + 1;
+		while ( TwoBlock.Contains(SmoothPath[temp] - SmoothPath[i]) ) // not in 5x5 neighbors
+		{
+			temp++;
+		}
+		i = temp;
+	}
+	Path.Add(SmoothPath.Last());
+}
+
+bool FPathFinder::IsWalkable(const FIntPoint& Chunk, const FIntPoint& A, const FIntPoint& B)
+{
+	if ( !IsInBoundary(A) || !IsInBoundary(B) )
+	{
+		return false;
+	}
+	if (IsNeighbor(A, B))
+	{
+		return true;
+	}
+
+	FVector2D LocalA = FVector2D(A.X + 0.5f, A.Y + 0.5f) * pLM->VertexSpacing;
+	FVector2D LocalB = FVector2D(B.X + 0.5f, B.Y + 0.5f) * pLM->VertexSpacing;
+	FVector2D Direction = LocalB - LocalA;
+	Direction.Normalize();
+	Direction *= pLM->VertexSpacing;
+	float DistSqr = GetDistSqr(LocalA, LocalB);
+
+	FVector2D Now = LocalA;
+	FVector2D Next = LocalA + Direction;
+	while ( GetDistSqr(LocalA, Next) <= DistSqr )
+	{
+		if ( GetTanSqr(Chunk, Now, Next) > MaxSlopeTanSqr )
+		{
+			return false;
+		}
+		Now = Next;
+		Next += Direction;
+	}
+
+	return true;
+}
 
 float FPathFinder::GetHeight(const FIntPoint& GlobalGrid)
 {
 	FVector2D ActualPos = FVector2D(GlobalGrid.X, GlobalGrid.Y) * pLM->VertexSpacing;
+	return pLM->GetHeight(ActualPos);
+}
+
+float FPathFinder::GetHeight(const FIntPoint& Chunk, const FVector2D& Local)
+{
+	FVector2D ActualPos = FVector2D(Chunk.X, Chunk.Y) * (pLM->VerticesPerChunk - 1) * pLM->VertexSpacing + Local;
 	return pLM->GetHeight(ActualPos);
 }
 
@@ -233,6 +325,7 @@ FIntPoint FPathFinder::GlobalToLocal(const FIntPoint& Chunk, const FIntPoint& Gl
 	return GlobalGrid - Chunk * (pLM->VerticesPerChunk - 1);
 }
 
+
 FIntPoint FPathFinder::GetChunk(const FIntPoint& GlobalGrid)
 {
 	FIntPoint Chunk;
@@ -241,11 +334,39 @@ FIntPoint FPathFinder::GetChunk(const FIntPoint& GlobalGrid)
 	return Chunk;
 }
 
+// diagonal approximation.
 float FPathFinder::GetMoveCost(const FIntPoint& A, const FIntPoint& B)
 {
 	int dx = FMath::Abs(A.X - B.X);
 	int dy = FMath::Abs(A.Y - B.Y);
 	return (dx + dy) + (SQRT2 - 2) * FMath::Min(dx, dy); // manhattan distance - diagonal movement
+}
+
+// use manhattan dist on height
+float FPathFinder::GetMoveCost(const FIntPoint& Chunk, const FIntPoint& A, const FIntPoint& B)
+{
+	float UnitHeight = ( FMath::Abs(GetHeight(Chunk, A) - GetHeight(Chunk, B)) ) / pLM->VertexSpacing;
+	return GetMoveCost(A, B) + UnitHeight;
+}
+
+float FPathFinder::GetTanSqr(const FIntPoint& Chunk, const FIntPoint& A, const FIntPoint& B)
+{
+	float UnitDistSqr = GetUnitDistSqr(A, B);
+	float UnitHeightSqr = ( GetCellHeight(Chunk, A) - GetCellHeight(Chunk, B) ) / pLM->VertexSpacing;
+	UnitHeightSqr = FMath::Square(UnitHeightSqr);
+
+	float TanSqr = UnitHeightSqr / UnitDistSqr;
+	return TanSqr;
+}
+
+float FPathFinder::GetTanSqr(const FIntPoint& Chunk, const FVector2D& LocalA, const FVector2D& LocalB)
+{
+	float DistSqr = GetDistSqr(LocalA, LocalB);
+	float HeightSqr = GetHeight(Chunk, LocalA) - GetHeight(Chunk, LocalB);
+	HeightSqr = FMath::Square(HeightSqr);
+
+	float TanSqr = HeightSqr / DistSqr;
+	return TanSqr;
 }
 
 int32 FPathFinder::GetFlatIndex(const FIntPoint& Index2D)
@@ -267,6 +388,11 @@ int32 FPathFinder::GetUnitDistSqr(const FIntPoint& A, const FIntPoint& B)
 	return FMath::Square(B.X - A.X) + FMath::Square(B.Y - A.Y);
 }
 
+float FPathFinder::GetDistSqr(const FVector2D& A, const FVector2D& B)
+{
+	return FMath::Square(A.X - B.X) + FMath::Square(A.Y - B.Y);
+}
+
 void FPathFinder::GetNeighbors(const FIntPoint& A, TArray<FIntPoint>& OutNeighbors)
 {
 	OutNeighbors.Empty();
@@ -282,6 +408,27 @@ void FPathFinder::GetNeighbors(const FIntPoint& A, TArray<FIntPoint>& OutNeighbo
 		}
 	}
 
+}
+
+bool FPathFinder::IsNeighbor(const FIntPoint& A, const FIntPoint& B)
+{
+	if (A == B)
+	{
+		return true;
+	}
+
+	TArray<FIntPoint> Neighbors;
+	GetNeighbors(A, Neighbors);
+
+	for (auto& Elem : Neighbors)
+	{
+		if (Elem == B)
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 bool FPathFinder::IsInBoundary(const FIntPoint& A)

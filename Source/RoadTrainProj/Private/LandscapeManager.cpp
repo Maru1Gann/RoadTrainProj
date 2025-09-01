@@ -77,12 +77,28 @@ void ALandscapeManager::Debug()
 		DrawDebugPoint(
 			GetWorld(),
 			GridToVector(Elem),
-			3.5f,
+			4.0f,
 			FColor::Cyan,
 			true
 		);
 	}
-	
+
+	TArray<FIntPoint> SmoothPath = OutPath;
+	PathFinder->SmoothPath(PathFinder->GetChunk(Start), SmoothPath);
+	UE_LOG(LogTemp, Warning, TEXT("SmoothPath %d"), SmoothPath.Num());
+	for (auto& Elem : SmoothPath)
+	{
+		DrawDebugPoint(
+			GetWorld(),
+			GridToVector(Elem),
+			8.0f,
+			FColor::White,
+			true
+		);
+	}
+
+	AddPathSpline(GetChunk(Start), SmoothPath);
+	//AddPathSpline(GetChunk(OutPath[0]), OutPath);
 
 }
 
@@ -237,12 +253,12 @@ void ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FIntP
 	for (auto& Pos : Path)
 	{
 		FIntPoint WorldPos = Chunk * (VerticesPerChunk - 1) + Pos;
-		FVector WorldVector = FVector(WorldPos.X, WorldPos.Y, 0.f) * VertexSpacing;
+		FVector WorldVector = FVector(WorldPos.X + 0.5f, WorldPos.Y + 0.5f, 0.f) * VertexSpacing;
 		WorldVector.Z = GetHeight(FVector2D(WorldVector.X, WorldVector.Y));
 		Spline->AddSplinePoint( WorldVector, ESplineCoordinateSpace::World );
 	}
 	
-	MakeRoad(Spline);
+	//MakeRoad(Spline);
 }
 
 void ALandscapeManager::MakeRoad(USplineComponent* Spline)
@@ -281,4 +297,12 @@ FVector ALandscapeManager::GridToVector(const FIntPoint& GlobalGrid)
 	Out.Y += VertexSpacing / 2;
 	Out.Z = GetHeight(FVector2D(Out.X, Out.Y));
 	return Out;
+}
+
+FIntPoint ALandscapeManager::GetChunk(const FIntPoint& GlobalGrid)
+{
+	FIntPoint Chunk;
+	Chunk.X = FMath::FloorToInt32(float(GlobalGrid.X) / float(VerticesPerChunk - 1));
+	Chunk.Y = FMath::FloorToInt32(float(GlobalGrid.Y) / float(VerticesPerChunk - 1));
+	return Chunk;
 }
