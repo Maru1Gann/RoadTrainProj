@@ -97,6 +97,7 @@ private:
     void GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& OutArray);
 
     void AddPathSpline(const FIntPoint& Chunk, const TArray<FIntPoint>& Path);
+    void AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path);
     void MakeRoad(USplineComponent* Spline);
 
     

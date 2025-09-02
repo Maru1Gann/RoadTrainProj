@@ -123,10 +123,20 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 			// do data passing
 			TArray<FIntPoint> ReversePath;
 			ReversePath.Empty();
+
+			// adding continuous connection ( gate )
+			if (EndGate.A != EndGate.B) // if it's a gate. not endpoint.
+			{
+				ReversePath.Add( GlobalToLocal(Chunk,EndGate.B) );
+			}
 			while (Current != NoConnection)
 			{
 				ReversePath.Add(Current);
 				Current = Frontier[GetFlatIndex(Current)].CameFrom;
+			}
+			if (StartGate.A != StartGate.B) // if it's a gate, not startpoint.
+			{
+				ReversePath.Add( GlobalToLocal(Chunk, StartGate.A) );
 			}
 			OutPath.Empty();
 			OutPath.SetNum(ReversePath.Num());
@@ -207,6 +217,7 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 	return false; // no path found
 }
 
+// line of sight. added if thingys to make it work on gates.
 void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
 {
 	if (Path.IsEmpty() || Path.Num() < 3)
@@ -214,12 +225,28 @@ void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
 		return;
 	}
 
+	bool IsStart = true;
+	bool IsEnd = true;
+
 	TArray<FIntPoint> SmoothPath;
 	int32 CheckPoint = 0;
 	int32 CurrentPoint = 1;
+	if ( !IsInBoundary(Path[0]) ) // if first one is out of boundary. this means it's a gate. (not the beginning)
+	{
+		IsStart = false;
+		SmoothPath.Add(Path[CheckPoint++]);
+		CurrentPoint++;
+	}
 	SmoothPath.Add(Path[CheckPoint]);
 
-	while (CurrentPoint < Path.Num())
+	int32 End = Path.Num();
+	if (!IsInBoundary(Path.Last())) // if last one is out of boundary. this means it's not the endgoal.
+	{
+		IsEnd = false;
+		End--;
+	}
+
+	while (CurrentPoint < End)
 	{
 		if (IsWalkable(Chunk, Path[CheckPoint], Path[CurrentPoint]))
 		{
@@ -232,11 +259,16 @@ void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
 			CurrentPoint++;
 		}
 	}
+
+	if (IsEnd) // if not endgoal
+	{
+		SmoothPath.Add(Path[Path.Num() - 2]); // this is the last one in the chunk. (if not endgoal)
+	}
 	SmoothPath.Add(Path.Last());
 	
 	Path.Empty();
 
-	// dogshits
+	// Set to ignore 5x5 neighbor
 	TSet<FIntPoint> TwoBlock;
 	for (int32 i = -2; i <= 2; i++)
 	{
@@ -246,7 +278,19 @@ void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
 		}
 	}
 
-	for (int32 i = 0; i < SmoothPath.Num() - 1; i++)
+	int32 Start = 0;
+	int32 End = SmoothPath.Num() - 1;
+	if (!IsStart)
+	{
+		Path.Add(SmoothPath[0]);
+		Start++;
+	}
+	if (!IsEnd)
+	{
+		End--;
+	}
+
+	for (int32 i = Start; i < End; i++)
 	{
 		Path.Add(SmoothPath[i]);
 		int32 temp = i + 1;
@@ -256,8 +300,58 @@ void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
 		}
 		i = temp;
 	}
+
+	if (!IsEnd)
+	{
+		Path.Add(SmoothPath[SmoothPath.Num() - 2]);
+	}
 	Path.Add(SmoothPath.Last());
 }
+
+// returns full path made from SmoothPath. 0,0 chunk Local Coordinate(except height).
+void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath)
+{
+	// make 'turn radius' turns. SmoothPath ensures 15m radius.
+	// plot every x meter point. for adequate spline and road mesh. x = vertexspacing should work fine.
+	// check heights.
+	// check lastgate - chunk start - chunk end - nextgate
+
+	if (SmoothPath.Num() < 2)
+	{
+		return;
+	}
+
+	OutPath.Empty();
+
+	for (int32 i = 0; i < SmoothPath.Num() - 1; i++) // make sure i+1 don't go out of index.
+	{
+		
+		float Step = pLM->VertexSpacing * 2;
+		FVector2D Current = FVector2D(SmoothPath[i].X+0.5f, SmoothPath[i].Y+0.5f) * pLM->VertexSpacing;
+		FVector2D Next = FVector2D(SmoothPath[i+1].X+0.5f, SmoothPath[i+1].Y+0.5f) * pLM->VertexSpacing;
+		FVector2D Direction = (Next - Current).GetSafeNormal() * Step;
+
+		FVector2D Temp = Current + Direction;
+		float DistSqr = FVector2D::DistSquared(Current, Next);
+		float RadSqr = FMath::Square(pLM->VertexSpacing);
+		OutPath.Add( FVector(Current.X, Current.Y, GetHeight(Chunk, Current) ) );
+		while (FVector2D::DistSquared(Current, Temp) < DistSqr && FVector2D::DistSquared(Temp,Next) >= RadSqr)
+		{
+			OutPath.Add( FVector( Temp.X, Temp.Y, GetHeight(Chunk, Temp) ) );
+			Temp += Direction;
+		}
+
+	} // we can do more work on height smoothing
+
+	FVector Last = FVector(SmoothPath.Last().X + 0.5f, SmoothPath.Last().Y + 0.5f, 0.f) * pLM->VertexSpacing;
+	Last.Z = GetHeight(Chunk, FVector2D(Last.X, Last.Y));
+	OutPath.Add(Last);
+
+	UE_LOG(LogTemp, Warning, TEXT("RebuildPath Num %d"), OutPath.Num());
+	
+}
+
+
 
 bool FPathFinder::IsWalkable(const FIntPoint& Chunk, const FIntPoint& A, const FIntPoint& B)
 {

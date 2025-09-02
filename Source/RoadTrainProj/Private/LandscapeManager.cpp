@@ -69,6 +69,8 @@ void ALandscapeManager::Debug()
 	RemoveLandscape();
 	GenerateLandscape();
 
+	FIntPoint TargetChunk = GetChunk(Start);
+
 	TArray<FIntPoint> OutPath;
 	PathFinder->GetPath(FGate(Start), FGate(End), OutPath, DrawPathDebug);
 
@@ -97,8 +99,11 @@ void ALandscapeManager::Debug()
 		);
 	}
 
-	AddPathSpline(GetChunk(Start), SmoothPath);
-	//AddPathSpline(GetChunk(OutPath[0]), OutPath);
+	TArray<FVector> PathFinal;
+	PathFinder->RebuildPath(TargetChunk, SmoothPath, PathFinal);
+
+	AddPathSpline(TargetChunk, PathFinal);
+	//AddPathSpline(TargetChunk, SmoothPath);
 
 }
 
@@ -248,6 +253,7 @@ void ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FIntP
 	Spline->AttachToComponent( pRMA->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform );
 	Spline->SetRelativeLocation(FVector::ZeroVector);
 	Spline->ClearSplinePoints(false);
+	Spline->SetMobility(EComponentMobility::Static);
 
 	// add spline points.
 	for (auto& Pos : Path)
@@ -258,7 +264,35 @@ void ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FIntP
 		Spline->AddSplinePoint( WorldVector, ESplineCoordinateSpace::World );
 	}
 	
-	//MakeRoad(Spline);
+	MakeRoad(Spline);
+}
+
+void ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path)
+{
+	ARealtimeMeshActor** ppRMA = Chunks.Find(Chunk);
+	if (!ppRMA)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("WTF"));
+		return;
+	}
+
+	ARealtimeMeshActor* pRMA = (*ppRMA);
+
+	USplineComponent* Spline = NewObject<USplineComponent>(pRMA); // add spline component
+	Spline->RegisterComponent(); // register to world.
+	Spline->AttachToComponent(pRMA->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+	Spline->SetRelativeLocation(FVector::ZeroVector);
+	Spline->ClearSplinePoints(false);
+	Spline->SetMobility(EComponentMobility::Static);
+
+	// add spline points.
+	for (auto& Pos : Path)
+	{
+		FVector WorldVector = Pos + FVector(Chunk.X, Chunk.Y, 0.f) * ChunkLength;
+		Spline->AddSplinePoint(WorldVector, ESplineCoordinateSpace::World);
+	}
+
+	MakeRoad(Spline);
 }
 
 void ALandscapeManager::MakeRoad(USplineComponent* Spline)

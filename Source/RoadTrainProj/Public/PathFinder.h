@@ -15,6 +15,7 @@ public:
 
     bool GetPath(const FGate& StartGate, const FGate& EndGate, TArray<FIntPoint>& OutPath, bool DrawDebug = false);
     void SmoothPath( const FIntPoint& Chunk, TArray<FIntPoint>& Path );
+    void RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath);
     
 private:
 
