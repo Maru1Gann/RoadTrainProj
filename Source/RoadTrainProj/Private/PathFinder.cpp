@@ -361,7 +361,7 @@ void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& S
 
 		DrawDebugPoint(
 			pLM->GetWorld(),
-			FVector(CenterR.X, CenterR.Y, GetHeight(Chunk, CenterR)+10.f),
+			FVector(CenterR.X, CenterR.Y, GetHeight(Chunk, CenterR) + 10.f),
 			8.0f,
 			FColor::Red,
 			true
@@ -370,7 +370,7 @@ void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& S
 		FVector2D DirectionCheck = LastDirection * TurnRadius + Current;
 		DrawDebugPoint(
 			pLM->GetWorld(),
-			FVector(DirectionCheck.X, DirectionCheck.Y, GetHeight(Chunk, DirectionCheck)+10.f),
+			FVector(DirectionCheck.X, DirectionCheck.Y, GetHeight(Chunk, DirectionCheck) + 10.f),
 			8.0f,
 			FColor::Black,
 			true
@@ -378,23 +378,33 @@ void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& S
 
 		DrawDebugPoint(
 			pLM->GetWorld(),
-			FVector(CenterL.X, CenterL.Y, GetHeight(Chunk, CenterL)+10.f),
+			FVector(CenterL.X, CenterL.Y, GetHeight(Chunk, CenterL) + 10.f),
 			8.0f,
 			FColor::Blue,
 			true
 		);
 
+		if (FVector2D::DistSquared(CenterR, Next) < FMath::Square(TurnRadius))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Path not in turnRad Error"));
+			return;
+		}
+
 		float Theta; // Next - Center - CircleEnd
 		float Phi; // Current - Center - Next
 		Theta = FMath::Acos( TurnRadius / FVector2D::Distance(CenterR, Next) );
-		Phi = FMath::Atan2(Current.Y - CenterR.Y, Current.X - CenterR.X) - FMath::Atan2(Next.Y - CenterR.Y, Next.X - CenterR.X);
-		Phi = FMath::Abs(Phi);
+		float ToC = FMath::Atan2(Current.Y - CenterR.Y, Current.X - CenterR.X);
+		float ToN = FMath::Atan2(Next.Y - CenterR.Y, Next.X - CenterR.X);;
+		if (ToC < 0.f) ToC += 2 * PI;
+		if (ToN < 0.f) ToN += 2 * PI;
+		Phi = ToN - ToC;
+		if (Phi < 0.f) Phi += 2 * PI;
 		UE_LOG(LogTemp, Warning, TEXT("Theta %f,  Phi %f") ,Theta, Phi);
 		
 		float AngleStart = FMath::Atan2(Current.Y - CenterR.Y, Current.X - CenterR.X);
-		UE_LOG(LogTemp, Warning, TEXT("AngleStart %f"), AngleStart);
+		UE_LOG(LogTemp, Warning, TEXT("AngleStart %fPI"), AngleStart/PI);
 		float AngleEnd = Phi - Theta + AngleStart;
-		float AngleStep = pLM->VertexSpacing*2 / TurnRadius; // arc length == vertexspacing.
+		if (AngleEnd < 0.f) AngleEnd += 2 * PI;
 
 		FVector2D CircleEnd = CenterR + FVector2D(FMath::Cos(AngleEnd), FMath::Sin(AngleEnd)) * TurnRadius;
 		DrawDebugPoint(
@@ -414,8 +424,29 @@ void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& S
 
 		OutPath.Add(FVector(Current.X, Current.Y, GetHeight(Chunk, Current))); // add CurrentPoint
 
+		if (AngleStart < 0.f) AngleStart += 2 * PI;
 		UE_LOG(LogTemp, Warning, TEXT("AngleStart %fPI, AngleEnd %fPI"), AngleStart / PI, AngleEnd / PI);
-		for (float Angle = AngleStart + AngleStep; Angle < AngleEnd; Angle += AngleStep)
+		float AngleStep = pLM->VertexSpacing * 2 / TurnRadius; // pivot arc length == vertexspacing.
+		while (AngleStart > AngleEnd)
+		{
+			AngleStart += AngleStep;
+			if (AngleStart > 2 * PI)
+			{
+				AngleStart -= 2 * PI;
+				break;
+			}
+			FVector2D Point1 = CenterR + FVector2D(FMath::Cos(AngleStart), FMath::Sin(AngleStart) ) * TurnRadius;
+			OutPath.Add(LocalToGlobal(Chunk, Point1));
+			DrawDebugPoint(
+				pLM->GetWorld(),
+				LocalToGlobal(Chunk, Point1),
+				10.0f,
+				FColor::Blue,
+				true
+			);
+
+		}
+		for (float Angle = AngleStart; Angle < AngleEnd - AngleStep/2; Angle += AngleStep)
 		{
 			FVector2D Point = CenterR + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * TurnRadius;
 			OutPath.Add(LocalToGlobal(Chunk, Point));
@@ -427,7 +458,12 @@ void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& S
 				true
 			);
 		}
-		OutPath.Add(LocalToGlobal(Chunk, CircleEnd));
+
+		
+		if ( FVector2D::DistSquared(CircleEnd, Current) > 1000.f )
+		{
+			OutPath.Add(LocalToGlobal(Chunk, CircleEnd));
+		}
 
 		// should work with stuffs below after dealing with Realistic Turns.
 		float Step = pLM->VertexSpacing * 2;
