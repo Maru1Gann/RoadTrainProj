@@ -32,7 +32,10 @@ private:
     float GetCellHeight(const FIntPoint& Chunk, const FIntPoint& LocalGrid);
     FIntPoint LocalToGlobal(const FIntPoint& Chunk, const FIntPoint& LocalGrid);
     FIntPoint GlobalToLocal(const FIntPoint& Chunk, const FIntPoint& GlobalGrid);
-    
+    FVector2D GridToCell(const FIntPoint& LocalGrid);
+    FVector LocalToGlobal(const FIntPoint& Chunk, const FVector2D& Local);
+
+    float ToCWAngle(const float& Rad);
 
     int32 GetFlatIndex(const FIntPoint& Index2D);
     FIntPoint GetIndex2D(const int32& FlatIndex);

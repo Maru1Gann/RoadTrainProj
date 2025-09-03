@@ -80,7 +80,7 @@ void ALandscapeManager::Debug()
 			GetWorld(),
 			GridToVector(Elem),
 			4.0f,
-			FColor::Cyan,
+			FColor::Black,
 			true
 		);
 	}
@@ -88,16 +88,6 @@ void ALandscapeManager::Debug()
 	TArray<FIntPoint> SmoothPath = OutPath;
 	PathFinder->SmoothPath(PathFinder->GetChunk(Start), SmoothPath);
 	UE_LOG(LogTemp, Warning, TEXT("SmoothPath %d"), SmoothPath.Num());
-	for (auto& Elem : SmoothPath)
-	{
-		DrawDebugPoint(
-			GetWorld(),
-			GridToVector(Elem),
-			8.0f,
-			FColor::White,
-			true
-		);
-	}
 
 	TArray<FVector> PathFinal;
 	PathFinder->RebuildPath(TargetChunk, SmoothPath, PathFinal);

@@ -233,26 +233,28 @@ void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
 	int32 CurrentPoint = 1;
 	if ( !IsInBoundary(Path[0]) ) // if first one is out of boundary. this means it's a gate. (not the beginning)
 	{
+		// start line of sight from second point.
 		IsStart = false;
 		SmoothPath.Add(Path[CheckPoint++]);
 		CurrentPoint++;
 	}
 	SmoothPath.Add(Path[CheckPoint]);
 
-	int32 End = Path.Num();
+	int32 LastPoint = Path.Num();
 	if (!IsInBoundary(Path.Last())) // if last one is out of boundary. this means it's not the endgoal.
 	{
+		// end before last point.
 		IsEnd = false;
-		End--;
+		LastPoint--;
 	}
 
-	while (CurrentPoint < End)
+	while (CurrentPoint < LastPoint)
 	{
 		if (IsWalkable(Chunk, Path[CheckPoint], Path[CurrentPoint]))
 		{
 			CurrentPoint++;
 		}
-		else // last point was walkable.
+		else // one point before was walkable.
 		{
 			CheckPoint = CurrentPoint - 1;
 			SmoothPath.Add(Path[CheckPoint]);
@@ -264,7 +266,7 @@ void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
 	{
 		SmoothPath.Add(Path[Path.Num() - 2]); // this is the last one in the chunk. (if not endgoal)
 	}
-	SmoothPath.Add(Path.Last());
+	SmoothPath.Add(Path.Last()); // this is out of chunk boundary
 	
 	Path.Empty();
 
@@ -279,7 +281,7 @@ void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
 	}
 
 	int32 Start = 0;
-	int32 End = SmoothPath.Num() - 1;
+	int32 End = SmoothPath.Num() - 2;
 	if (!IsStart)
 	{
 		Path.Add(SmoothPath[0]);
@@ -306,6 +308,7 @@ void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
 		Path.Add(SmoothPath[SmoothPath.Num() - 2]);
 	}
 	Path.Add(SmoothPath.Last());
+
 }
 
 // returns full path made from SmoothPath. 0,0 chunk Local Coordinate(except height).
@@ -321,29 +324,136 @@ void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& S
 		return;
 	}
 
+	bool IsStart = true;
+	bool IsEnd = true;
+	int32 Start = 0;
+	int32 End = SmoothPath.Num() - 1;
+
+	if ( !IsInBoundary(SmoothPath[0]) )
+	{
+		IsStart = false;
+		Start = 1;
+	}
+	if ( !IsInBoundary( SmoothPath.Last() ) )
+	{
+		IsEnd = false;
+		End = SmoothPath.Num() - 2;
+	}
+
 	OutPath.Empty();
 
-	for (int32 i = 0; i < SmoothPath.Num() - 1; i++) // make sure i+1 don't go out of index.
+	//FVector2D LastDirection = (GridToCell(SmoothPath[1]) - GridToCell(SmoothPath[0])).GetSafeNormal(); // same even if IsStart is T or F.
+	FVector2D LastDirection(1, -1);
+	float TurnRadius = pLM->VertexSpacing * 3 ; // should fix this later.
+
+	for (int32 i = Start; i < End; i++) // make sure i+1 don't go out of index.
 	{
+
+		FVector2D Current = GridToCell(SmoothPath[i]);
+		FVector2D Next = GridToCell(SmoothPath[i + 1]);
+
+		// doing realistic turns
+		// first find center of circle. (for turning)
+		FVector2D CenterR = Current + FVector2D(-LastDirection.Y, LastDirection.X).GetSafeNormal() * TurnRadius; // 90 degree turn. cw
+		FVector2D CenterL = Current + FVector2D(LastDirection.Y, -LastDirection.X).GetSafeNormal() * TurnRadius; // 90 degree turn. ccw
+
+		// + rad -> cw in UE (tested)
+
+		DrawDebugPoint(
+			pLM->GetWorld(),
+			FVector(CenterR.X, CenterR.Y, GetHeight(Chunk, CenterR)+10.f),
+			8.0f,
+			FColor::Red,
+			true
+		);
+
+		FVector2D DirectionCheck = LastDirection * TurnRadius + Current;
+		DrawDebugPoint(
+			pLM->GetWorld(),
+			FVector(DirectionCheck.X, DirectionCheck.Y, GetHeight(Chunk, DirectionCheck)+10.f),
+			8.0f,
+			FColor::Black,
+			true
+		);
+
+		DrawDebugPoint(
+			pLM->GetWorld(),
+			FVector(CenterL.X, CenterL.Y, GetHeight(Chunk, CenterL)+10.f),
+			8.0f,
+			FColor::Blue,
+			true
+		);
+
+		float Theta; // Next - Center - CircleEnd
+		float Phi; // Current - Center - Next
+		Theta = FMath::Acos( TurnRadius / FVector2D::Distance(CenterR, Next) );
+		Phi = FMath::Atan2(Current.Y - CenterR.Y, Current.X - CenterR.X) - FMath::Atan2(Next.Y - CenterR.Y, Next.X - CenterR.X);
+		Phi = FMath::Abs(Phi);
+		UE_LOG(LogTemp, Warning, TEXT("Theta %f,  Phi %f") ,Theta, Phi);
 		
-		float Step = pLM->VertexSpacing * 2;
-		FVector2D Current = FVector2D(SmoothPath[i].X+0.5f, SmoothPath[i].Y+0.5f) * pLM->VertexSpacing;
-		FVector2D Next = FVector2D(SmoothPath[i+1].X+0.5f, SmoothPath[i+1].Y+0.5f) * pLM->VertexSpacing;
-		FVector2D Direction = (Next - Current).GetSafeNormal() * Step;
+		float AngleStart = FMath::Atan2(Current.Y - CenterR.Y, Current.X - CenterR.X);
+		UE_LOG(LogTemp, Warning, TEXT("AngleStart %f"), AngleStart);
+		float AngleEnd = Phi - Theta + AngleStart;
+		float AngleStep = pLM->VertexSpacing*2 / TurnRadius; // arc length == vertexspacing.
 
-		FVector2D Temp = Current + Direction;
-		float DistSqr = FVector2D::DistSquared(Current, Next);
-		float RadSqr = FMath::Square(pLM->VertexSpacing);
-		OutPath.Add( FVector(Current.X, Current.Y, GetHeight(Chunk, Current) ) );
-		while (FVector2D::DistSquared(Current, Temp) < DistSqr && FVector2D::DistSquared(Temp,Next) >= RadSqr)
+		FVector2D CircleEnd = CenterR + FVector2D(FMath::Cos(AngleEnd), FMath::Sin(AngleEnd)) * TurnRadius;
+		DrawDebugPoint(
+			pLM->GetWorld(),
+			LocalToGlobal(Chunk, Current),
+			12.0f,
+			FColor::Cyan,
+			true
+		);
+		DrawDebugPoint(
+			pLM->GetWorld(),
+			LocalToGlobal(Chunk, CircleEnd),
+			12.0f,
+			FColor::Blue,
+			true
+		);
+
+		OutPath.Add(FVector(Current.X, Current.Y, GetHeight(Chunk, Current))); // add CurrentPoint
+
+		UE_LOG(LogTemp, Warning, TEXT("AngleStart %fPI, AngleEnd %fPI"), AngleStart / PI, AngleEnd / PI);
+		for (float Angle = AngleStart + AngleStep; Angle < AngleEnd; Angle += AngleStep)
 		{
-			OutPath.Add( FVector( Temp.X, Temp.Y, GetHeight(Chunk, Temp) ) );
-			Temp += Direction;
+			FVector2D Point = CenterR + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * TurnRadius;
+			OutPath.Add(LocalToGlobal(Chunk, Point));
+			DrawDebugPoint(
+				pLM->GetWorld(),
+				LocalToGlobal(Chunk, Point),
+				10.0f,
+				FColor::Red,
+				true
+			);
 		}
+		OutPath.Add(LocalToGlobal(Chunk, CircleEnd));
 
+		// should work with stuffs below after dealing with Realistic Turns.
+		float Step = pLM->VertexSpacing * 2;
+		FVector2D Direction = (Next - CircleEnd).GetSafeNormal() * Step;
+		FVector2D Temp = CircleEnd + Direction;
+		float DistSqr = FVector2D::DistSquared(CircleEnd, Next);
+		float RadSqr = FMath::Square(pLM->VertexSpacing);
+
+		while (FVector2D::DistSquared(CircleEnd, Temp) < DistSqr && FVector2D::DistSquared(Temp , Next) >= RadSqr)
+		{
+			OutPath.Add( FVector( Temp.X, Temp.Y, GetHeight(Chunk, Temp) ) ); // add Pivots between Current and Next
+			Temp += Direction; // go another step.
+		} // this won't add the last 'Next' point
+
+		LastDirection = Direction;
 	} // we can do more work on height smoothing
 
-	FVector Last = FVector(SmoothPath.Last().X + 0.5f, SmoothPath.Last().Y + 0.5f, 0.f) * pLM->VertexSpacing;
+	// add the last 'Next'
+	FVector Last;
+	if (!IsEnd) // if not endgoal, actual last one is on next chunk.
+	{
+		Last = FVector(SmoothPath[End-1].X + 0.5f, SmoothPath[End-1].Y + 0.5f, 0.f) * pLM->VertexSpacing;
+		Last.Z = GetHeight(Chunk, FVector2D(Last.X, Last.Y));
+		OutPath.Add(Last);
+	}
+	Last = FVector(SmoothPath.Last().X + 0.5f, SmoothPath.Last().Y + 0.5f, 0.f) * pLM->VertexSpacing;
 	Last.Z = GetHeight(Chunk, FVector2D(Last.X, Last.Y));
 	OutPath.Add(Last);
 
@@ -417,6 +527,26 @@ FIntPoint FPathFinder::LocalToGlobal(const FIntPoint& Chunk, const FIntPoint& Lo
 FIntPoint FPathFinder::GlobalToLocal(const FIntPoint& Chunk, const FIntPoint& GlobalGrid)
 {
 	return GlobalGrid - Chunk * (pLM->VerticesPerChunk - 1);
+}
+
+FVector2D FPathFinder::GridToCell(const FIntPoint& LocalGrid)
+{
+	return FVector2D(LocalGrid.X + 0.5f, LocalGrid.Y + 0.5f) * pLM->VertexSpacing;
+}
+
+FVector FPathFinder::LocalToGlobal(const FIntPoint& Chunk, const FVector2D& Local)
+{
+	return FVector( Local.X, Local.Y, GetHeight(Chunk,Local));
+}
+
+float FPathFinder::ToCWAngle(const float& Rad)
+{
+	float Out = FMath::Fmod(Rad, 2 * PI);
+	if (Out < 0.f)
+	{
+		Out = 2 * PI + Out;
+	}
+	return Out;
 }
 
 
