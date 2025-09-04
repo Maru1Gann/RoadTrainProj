@@ -35,8 +35,6 @@ private:
     FVector2D GridToCell(const FIntPoint& LocalGrid);
     FVector LocalToGlobal(const FIntPoint& Chunk, const FVector2D& Local);
 
-    float ToCWAngle(const float& Rad);
-
     int32 GetFlatIndex(const FIntPoint& Index2D);
     FIntPoint GetIndex2D(const int32& FlatIndex);
 
@@ -53,6 +51,11 @@ private:
 
     float GetTanSqr(const FIntPoint& Chunk, const FIntPoint& A, const FIntPoint& B);
     float GetTanSqr(const FIntPoint& Chunk, const FVector2D& LocalA, const FVector2D& LocalB);
+
+    bool GetCurve(const FVector2D& StartDirection, const FVector2D& Current, const FVector2D& Next, TArray<FVector2D>& OutRoute, 
+        const float& TurnRadius = 15000.0f, const float& NoTurnAngle = 10.0f);
+    float GetArcAngle(const FVector2D& Center, const FVector2D& Current, const FVector2D& Next, const bool& IsRightTurn, const float& TurnRadius = 1500.0f);
+
 };
 
 struct FGate

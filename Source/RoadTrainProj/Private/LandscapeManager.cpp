@@ -76,6 +76,7 @@ void ALandscapeManager::Debug()
 
 	for(auto& Elem : OutPath)
 	{
+
 		DrawDebugPoint(
 			GetWorld(),
 			GridToVector(Elem),
