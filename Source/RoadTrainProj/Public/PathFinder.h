@@ -13,8 +13,12 @@ public:
     FPathFinder(ALandscapeManager* pLM);
     friend ALandscapeManager; // debug
 
+    void GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, TMap<FIntPoint, TPair<FGate, float>>& OutGates);
+
     bool GetPath(const FGate& StartGate, const FGate& EndGate, TArray<FIntPoint>& OutPath, bool DrawDebug = false);
+
     void SmoothPath( const FIntPoint& Chunk, TArray<FIntPoint>& Path );
+
     void RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath);
     
 private:
@@ -43,7 +47,8 @@ private:
 
     void GetNeighbors(const FIntPoint& A, TArray<FIntPoint>& OutNeighbors);
     bool IsNeighbor(const FIntPoint& A, const FIntPoint& B);
-    bool IsInBoundary(const FIntPoint& A);
+    bool IsInBoundary(const FIntPoint& LocalGrid);
+    bool IsOnBoundary(const FIntPoint& LocalGrid);
     FIntPoint GetChunk(const FIntPoint& GlobalGrid);
 
     float GetMoveCost(const FIntPoint& A, const FIntPoint& B);

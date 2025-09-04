@@ -6,10 +6,186 @@
 #include <limits>
 const float INFLOAT = std::numeric_limits<float>::infinity(); // float INF for obstacles
 const float SQRT2 = FMath::Sqrt(2.0f);
+const FIntPoint NoConnection(-100, -100);
 
 FPathFinder::FPathFinder( ALandscapeManager* pLM ) : pLM( pLM )
 {
 	MaxSlopeTanSqr = FMath::Square(pLM->MaxSlope / 100.f);
+}
+
+// temporary struct for pathfinding.
+struct FNode
+{
+	FNode() {
+		GCost = INFLOAT;
+		FCost = INFLOAT;
+		CameFrom = NoConnection;
+		IsOpen = false;
+		Prev = NoConnection;
+		Next = NoConnection;
+	};
+
+	FNode(
+		const float& GCost,
+		const float& FCost,
+		const FIntPoint& CameFrom,
+		const bool& IsOpen,
+		const FIntPoint& Prev,
+		const FIntPoint& Next
+	) : GCost(GCost), FCost(FCost), CameFrom(CameFrom), IsOpen(IsOpen), Prev(Prev), Next(Next) {
+	};
+
+	// f(n) = g(n) + h(n) -> final cost = cost + heuristic
+	float GCost; // g(n). cost total to this point.
+	float FCost; // f(n). g(n) + h(n).
+	FIntPoint CameFrom;
+	bool IsOpen;
+	FIntPoint Prev; // open list doubly linked
+	FIntPoint Next;
+};
+
+
+// find gates. TMap<FGate, TPair<FGate, float cost>> OutGates
+// basically GetPath with GlobalGoal Heuristic.
+void FPathFinder::GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, TMap<FIntPoint, TPair<FGate, float>>& OutGates)
+{
+	// add every neighboring chunk that's reachable to TMap. (as a form of FGate)
+	FIntPoint Chunk = GetChunk(StartGate.B);
+
+	// FIntPoint Chunk = GetChunk(StartGate.EndGate);
+	FIntPoint Start = GlobalToLocal(Chunk, StartGate.B);
+	FIntPoint Goal = GlobalToLocal(Chunk, GlobalGoal);
+
+	TArray<FNode> Frontier;
+	int32 FrontierNum = FMath::Square((pLM->VerticesPerChunk - 1)); // num of cells
+	Frontier.SetNum(FrontierNum);
+
+	TArray<bool> Visited;
+	Visited.SetNum(FrontierNum);
+	for (auto& Elem : Visited) { Elem = false; }
+	Visited[GetFlatIndex(Start)] = true;
+	Frontier[GetFlatIndex(Start)] = FNode(0, GetMoveCost(Chunk, Start, Goal), NoConnection, true, NoConnection, NoConnection);
+
+	FIntPoint OpenListStart = Start;
+	FIntPoint OpenListEnd = Start;
+
+	int32 Counter = 0;
+
+	// start A*
+	while (OpenListStart != NoConnection && OpenListEnd != NoConnection)
+	{
+		if (Counter >= pLM->CounterHardLock)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("CounterLockHit, %d"), Counter);
+			break;
+		}
+		Counter++;
+
+		// find lowest GCost node. (highest priority node)
+		float LowestCost = INFLOAT;
+		FIntPoint Current = NoConnection;
+		for (FIntPoint Finder = OpenListStart; Finder != NoConnection; Finder = Frontier[GetFlatIndex(Finder)].Next)
+		{
+			FNode& FinderNode = Frontier[GetFlatIndex(Finder)];
+			if (LowestCost > FinderNode.FCost)
+			{
+				Current = Finder;
+				LowestCost = FinderNode.FCost;
+			}
+		}
+		// now Current == LowestCost LocalGrid in open list
+
+		if (Current == NoConnection) // something went off.
+		{
+			return;
+		}
+
+		// ----------if met potential gate. (chunk boundary)---------
+		if ( IsOnBoundary(Current) )
+		{
+			// find possible edges.
+			TArray<FIntPoint> NeighborsTemp;
+			GetNeighbors(Current, NeighborsTemp);
+			TArray<FIntPoint> Edges;
+			for (auto& Neighbor : NeighborsTemp)
+			{
+				if ( !IsInBoundary(Neighbor) )
+				{
+					Edges.Add(Neighbor);
+				}
+			}
+
+
+		}
+
+
+		// ---------if didn't meet goal---------
+		TArray<FIntPoint> Neighbors;
+		FNode& NodeNow = Frontier[GetFlatIndex(Current)];
+		GetNeighbors(Current, Neighbors);
+		for (auto& Neighbor : Neighbors)
+		{
+
+			// continue if blocked (Check slope)
+			if (!IsInBoundary(Neighbor) || GetTanSqr(Chunk, Current, Neighbor) > MaxSlopeTanSqr)
+			{
+				continue;
+			}
+
+			// continue if 'visited && lower cost'
+			float NewCost = NodeNow.GCost + GetMoveCost(Chunk, Current, Neighbor);
+			if (Visited[GetFlatIndex(Neighbor)] == true
+				&&
+				Frontier[GetFlatIndex(Neighbor)].GCost <= NewCost + 0.01) // add to ignore irrelavent difference
+			{
+				continue;
+			}
+
+			float Heuristic = GetMoveCost(Chunk, Neighbor, Goal);
+			FNode& NodeNext = Frontier[GetFlatIndex(Neighbor)];
+			NodeNext.GCost = NewCost;
+			NodeNext.FCost = NewCost + Heuristic;
+			NodeNext.CameFrom = Current;
+			Visited[GetFlatIndex(Neighbor)] = true; // visited.
+
+			// add this to open list
+			if (!NodeNext.IsOpen)
+			{
+				Frontier[GetFlatIndex(OpenListEnd)].Next = Neighbor;
+				NodeNext.Prev = OpenListEnd;
+				NodeNext.Next = NoConnection;
+				NodeNext.IsOpen = true;
+				OpenListEnd = Neighbor;
+			}
+		}
+
+		// update list start and end
+		if (OpenListStart == Current)
+		{
+			OpenListStart = NodeNow.Next;
+		}
+		if (OpenListEnd == Current)
+		{
+			OpenListEnd = NodeNow.Prev;
+		}
+		// remove current from open list.
+		NodeNow.IsOpen = false;
+		if (NodeNow.Prev != NoConnection)
+		{
+			FNode& PrevNode = Frontier[GetFlatIndex(NodeNow.Prev)];
+			PrevNode.Next = NodeNow.Next;
+		}
+		if (NodeNow.Next != NoConnection)
+		{
+			FNode& NextNode = Frontier[GetFlatIndex(NodeNow.Next)];
+			NextNode.Prev = NodeNow.Prev;
+		}
+
+
+	}
+
+
+	return;
 }
 
 // find path, but do it on (0,0) local chunk.
@@ -21,37 +197,6 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 		UE_LOG(LogTemp, Warning, TEXT("GetPath input gates Chunk error, %s %s"), *Chunk.ToString(), *GetChunk(EndGate.A).ToString());
 		return false;
 	}
-
-	static const FIntPoint NoConnection(-100, -100);
-
-	// temporary struct
-	struct FNode
-	{
-		FNode() { 
-			GCost = INFLOAT; 
-			FCost = INFLOAT; 
-			CameFrom = NoConnection;  
-			IsOpen = false; 
-			Prev = NoConnection; 
-			Next = NoConnection; };
-
-		FNode(
-			const float& GCost,
-			const float& FCost,
-			const FIntPoint& CameFrom,
-			const bool& IsOpen,
-			const FIntPoint& Prev,
-			const FIntPoint& Next
-		) : GCost(GCost), FCost(FCost), CameFrom(CameFrom), IsOpen(IsOpen), Prev(Prev), Next(Next) {};
-
-		// f(n) = g(n) + h(n) -> final cost = cost + heuristic
-		float GCost; // g(n). cost total to this point.
-		float FCost; // f(n). g(n) + h(n).
-		FIntPoint CameFrom;
-		bool IsOpen;
-		FIntPoint Prev; // open list doubly linked
-		FIntPoint Next;
-	};
 
 
 	// FIntPoint Chunk = GetChunk(StartGate.EndGate);
@@ -360,13 +505,7 @@ void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& S
 		UE_LOG(LogTemp, Warning, TEXT("Curve Num %d"), CurveArc.Num());
 		for (auto& Elem : CurveArc)
 		{
-			DrawDebugPoint(
-				pLM->GetWorld(),
-				LocalToGlobal(Chunk, Elem),
-				10.0f,
-				FColor::Blue,
-				true
-			);
+			DrawDebugPoint( pLM->GetWorld(), LocalToGlobal(Chunk, Elem), 10.0f, FColor::Blue, true );
 			OutPath.Add(LocalToGlobal(Chunk,Elem));
 		}
 		
@@ -375,7 +514,7 @@ void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& S
 		if (bGotCurve) LineStart = CurveArc.Last();
 
 		float Step = pLM->VertexSpacing * 2;
-		FVector2D Direction = (Next - LineStart).GetSafeNormal() * Step;
+		FVector2D Direction = (Next - LineStart).GetSafeNormal();
 		FVector2D Temp = LineStart + Direction;
 		float DistSqr = FVector2D::DistSquared(LineStart, Next);
 		float RadSqr = FMath::Square(pLM->VertexSpacing);
@@ -383,11 +522,11 @@ void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& S
 		while (FVector2D::DistSquared(LineStart, Temp) < DistSqr && FVector2D::DistSquared(Temp , Next) >= RadSqr)
 		{
 			OutPath.Add( FVector( Temp.X, Temp.Y, GetHeight(Chunk, Temp) ) ); // add Pivots between Current and Next
-			Temp += Direction; // go another step.
+			Temp += Direction*Step; // go another step.
 		} // this won't add the last 'Next' point
 
 		LastDirection = Direction;
-	} // we can do more work on height smoothing
+	} // we can do more work on height smoothing. for end.
 
 	// add the last 'Next'
 	FVector Last;
@@ -503,7 +642,7 @@ float FPathFinder::GetMoveCost(const FIntPoint& A, const FIntPoint& B)
 // use manhattan dist on height
 float FPathFinder::GetMoveCost(const FIntPoint& Chunk, const FIntPoint& A, const FIntPoint& B)
 {
-	float UnitHeight = ( FMath::Abs(GetHeight(Chunk, A) - GetHeight(Chunk, B)) ) / pLM->VertexSpacing;
+	float UnitHeight = ( FMath::Abs( GetCellHeight(Chunk, A) - GetCellHeight(Chunk, B) ) ) / pLM->VertexSpacing;
 	return GetMoveCost(A, B) + UnitHeight;
 }
 
@@ -682,8 +821,9 @@ bool FPathFinder::IsNeighbor(const FIntPoint& A, const FIntPoint& B)
 	return false;
 }
 
-bool FPathFinder::IsInBoundary(const FIntPoint& A)
+bool FPathFinder::IsInBoundary(const FIntPoint& LocalGrid)
 {
+	FIntPoint A = LocalGrid;
 	int32 Boundary = pLM->VerticesPerChunk - 1;
 	if (A.X >= 0 && A.X < Boundary 
 		&& 
@@ -694,3 +834,15 @@ bool FPathFinder::IsInBoundary(const FIntPoint& A)
 
 }
 
+bool FPathFinder::IsOnBoundary(const FIntPoint& LocalGrid)
+{
+	FIntPoint A = LocalGrid;
+	int32 Boundary = pLM->VerticesPerChunk - 2; // Cell Num = VertsPerChunk - 1. Cell Last Index = CellNum - 1
+	if (A.X == 0 || A.X == Boundary
+		||
+		A.Y == 0 || A.Y == Boundary)
+	{ return true; }
+	else
+	{ return false; }
+
+}
