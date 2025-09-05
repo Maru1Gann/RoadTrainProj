@@ -13,13 +13,14 @@ public:
     FPathFinder(ALandscapeManager* pLM);
     friend ALandscapeManager; // debug
 
+    // HPA*
+    bool GetGatePath(const FIntPoint& StartCell, const FIntPoint& EndCell, TArray<FGate>& OutGatePath);
     void GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, TMap<FIntPoint, TPair<FGate, float>>& OutGates);
-
     bool GetPath(const FGate& StartGate, const FGate& EndGate, TArray<FIntPoint>& OutPath, bool DrawDebug = false);
 
-    void SmoothPath( const FIntPoint& Chunk, TArray<FIntPoint>& Path );
-
-    void RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath);
+    // Path Smoother
+    void SmoothPath( TArray<FIntPoint>& Path );
+    void RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath);
     
 private:
 
@@ -40,6 +41,7 @@ private:
     FVector LocalToGlobal(const FIntPoint& Chunk, const FVector2D& Local);
 
     int32 GetFlatIndex(const FIntPoint& Index2D);
+    int32 GetFlatIndex( const FIntPoint& Index2D, const int32& RowNum );
     FIntPoint GetIndex2D(const int32& FlatIndex);
 
     int32 GetUnitDistSqr(const FIntPoint& A, const FIntPoint& B);
@@ -48,12 +50,15 @@ private:
     void GetNeighbors(const FIntPoint& A, TArray<FIntPoint>& OutNeighbors);
     bool IsNeighbor(const FIntPoint& A, const FIntPoint& B);
     bool IsInBoundary(const FIntPoint& LocalGrid);
+    bool IsInBoundary(const FIntPoint& LocalGrid, const FIntPoint& BoxSize);
     bool IsOnBoundary(const FIntPoint& LocalGrid);
     FIntPoint GetChunk(const FIntPoint& GlobalGrid);
 
     float GetMoveCost(const FIntPoint& A, const FIntPoint& B);
+    float GetGlobalMoveCost(const FIntPoint& A, const FIntPoint& B);
     float GetMoveCost(const FIntPoint& Chunk, const FIntPoint& A, const FIntPoint& B);
 
+    float GetTanSqr(const FIntPoint& A, const FIntPoint& B);
     float GetTanSqr(const FIntPoint& Chunk, const FIntPoint& A, const FIntPoint& B);
     float GetTanSqr(const FIntPoint& Chunk, const FVector2D& LocalA, const FVector2D& LocalB);
 

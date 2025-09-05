@@ -44,13 +44,198 @@ struct FNode
 	FIntPoint Next;
 };
 
+// Chunk Level A*. use GetGates to find neighbors.
+// basically GetPath on Chunk Level.
+// StartCell & EndCell == GlobalGrid.
+bool FPathFinder::GetGatePath(const FIntPoint& StartCell, const FIntPoint& EndCell, TArray<FGate>& OutGatePath)
+{
+	
+	// +2 to make box size like below.
+	// 0 0 0 0
+	// 0 0 e 0
+	// 0 s 0 0
+	// 0 0 0 0
+	// one chunk bigger.
+	// S and E should be in 0 ~ + Range.
+	// so we'll add offset.
 
-// find gates. TMap<FGate, TPair<FGate, float cost>> OutGates
+	FIntPoint StartChunk = GetChunk(StartCell);
+	FIntPoint EndChunk = GetChunk(EndCell);
+
+	FIntPoint Offset = FIntPoint( -FMath::Min(StartChunk.X, EndChunk.X), -FMath::Min(StartChunk.Y, EndChunk.Y) ) + FIntPoint(1, 1);
+
+	FIntPoint Start = StartChunk + Offset;
+	FIntPoint End = EndChunk + Offset;
+	UE_LOG(LogTemp, Warning, TEXT("Start, End %s %s"), *Start.ToString(), *End.ToString());
+
+	FIntPoint FrontierSize( FMath::Abs(Start.X - End.X) + 1 + 2, FMath::Abs(Start.Y - End.Y) + 1 + 2 ); // may be rectangle
+	// made the box.
+
+	if (FrontierSize.X * FrontierSize.Y > 500 * 500)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Start-End box too big."));
+		return false;
+	}
+
+	TArray<FNode> Frontier;
+	int32 FrontierNum = FrontierSize.X * FrontierSize.Y;
+	int32 RowNum = FrontierSize.X;
+	Frontier.SetNum(FrontierNum);
+
+	TArray<bool> Visited;
+	Visited.SetNum(FrontierNum);
+	for (auto& Elem : Visited) Elem = false; // init
+
+	Visited[ GetFlatIndex(Start, RowNum) ] = true;
+	Frontier[ GetFlatIndex(Start, RowNum) ] = FNode(0, GetGlobalMoveCost(StartCell, EndCell), NoConnection, true, NoConnection, NoConnection);
+
+	TMap<FIntPoint, FGate> GateMap;			// Key is Chunk, Value is Gate. Gate is lowest GCost gate that comes into the chunk. ( startgate )
+	GateMap.Add( Start, FGate(StartCell) );	// only update when cost is lower.
+
+	FIntPoint OpenListStart = Start;
+	FIntPoint OpenListEnd = Start;
+
+	int32 Counter = 0;
+
+	// start A*
+	while (OpenListStart != NoConnection && OpenListEnd != NoConnection)
+	{
+		if (Counter >= pLM->CounterHardLock)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("CounterLockHit, %d"), Counter);
+			break;
+		}
+		Counter++;
+
+		// find lowest GCost node. (highest priority node)
+		float LowestCost = INFLOAT;
+		FIntPoint Current = NoConnection;
+		for ( FIntPoint Finder = OpenListStart; Finder != NoConnection; Finder = Frontier[GetFlatIndex(Finder, RowNum)].Next )
+		{
+			FNode& FinderNode = Frontier[GetFlatIndex(Finder, RowNum)];
+			if (LowestCost > FinderNode.FCost)
+			{
+				Current = Finder;
+				LowestCost = FinderNode.FCost;
+			}
+		}
+		// now Current == LowestCost LocalGrid in open list
+
+	
+		if ( Current == NoConnection ) // something went off.
+		{ return false; }
+
+		FGate* CurrentGate = GateMap.Find(Current);
+		if (!CurrentGate) 
+		{ UE_LOG(LogTemp, Warning, TEXT("CurrentGate Nullptr. Error")); return false; }
+		UE_LOG(LogTemp, Warning, TEXT("Current(Offset) %s, CurrentGate(Global) %s to %s"), *Current.ToString(), *(*CurrentGate).A.ToString(), *(*CurrentGate).B.ToString());
+
+		// ----------if met goal---------
+		if (Current == End)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Current %s Goal %s"), *Current.ToString(), *End.ToString());
+			// do data passing
+			TArray<FGate> ReversePath;
+			while (Current != NoConnection)
+			{
+				CurrentGate = GateMap.Find( Current );
+				ReversePath.Add( *CurrentGate );
+				Current = Frontier[GetFlatIndex(Current, RowNum)].CameFrom;
+
+			}
+
+			OutGatePath.Empty();
+			OutGatePath.SetNum(ReversePath.Num());
+			for (int32 i = 0; i < ReversePath.Num(); i++)
+			{
+				OutGatePath[i] = ReversePath[ReversePath.Num() - 1 - i];
+			}
+			OutGatePath.Add(FGate(EndCell));
+			return true;
+		}
+
+		// ---------if didn't meet goal---------
+		FNode& NodeNow = Frontier[ GetFlatIndex(Current, RowNum) ];
+		TMap< FIntPoint, TPair<FGate, float> > NeighborGates;
+		GetGates( *CurrentGate, EndCell, NeighborGates );
+		for (auto& NeighborGate : NeighborGates)
+		{
+			FIntPoint Neighbor = NeighborGate.Key + Offset;	// FIntPoint
+			float GCost = NeighborGate.Value.Value;	// TPair< FGate, "float" >
+			FGate Gate = NeighborGate.Value.Key;	// TPair< "FGate", float > 
+			// continue if out of bounds
+			if ( !IsInBoundary( Neighbor, FrontierSize ) )
+			{ continue; }
+
+			// continue if 'visited && lower cost'
+			float NewCost = NodeNow.GCost + GCost;
+			if (Visited[GetFlatIndex(Neighbor, RowNum)] == true
+				&&
+				Frontier[GetFlatIndex(Neighbor, RowNum)].GCost <= NewCost + 0.01) // add to ignore irrelavent difference
+			{ continue; }
+
+			// this is lowest cost visit.
+			GateMap.Add( Neighbor, Gate );
+			float Heuristic = GetGlobalMoveCost(Gate.B, EndCell);
+			FNode& NodeNext = Frontier[ GetFlatIndex(Neighbor, RowNum) ];
+			NodeNext.GCost = NewCost;
+			NodeNext.FCost = NewCost + Heuristic;
+			NodeNext.CameFrom = Current;
+			Visited[GetFlatIndex(Neighbor, RowNum)] = true; // visited.
+
+			// add this to open list
+			if (!NodeNext.IsOpen)
+			{
+				Frontier[GetFlatIndex(OpenListEnd, RowNum)].Next = Neighbor;
+				NodeNext.Prev = OpenListEnd;
+				NodeNext.Next = NoConnection;
+				NodeNext.IsOpen = true;
+				OpenListEnd = Neighbor;
+			}
+		}
+
+		// update list start and end
+		if (OpenListStart == Current)
+		{
+			OpenListStart = NodeNow.Next;
+		}
+		if (OpenListEnd == Current)
+		{
+			OpenListEnd = NodeNow.Prev;
+		}
+		// remove current from open list.
+		NodeNow.IsOpen = false;
+		if (NodeNow.Prev != NoConnection)
+		{
+			FNode& PrevNode = Frontier[GetFlatIndex(NodeNow.Prev, RowNum)];
+			PrevNode.Next = NodeNow.Next;
+		}
+		if (NodeNow.Next != NoConnection)
+		{
+			FNode& NextNode = Frontier[GetFlatIndex(NodeNow.Next, RowNum)];
+			NextNode.Prev = NodeNow.Prev;
+		}
+
+
+	}
+
+
+	return false; // no path found
+}
+
+
+// find gates. TMap<FIntPoint GlobalChunk, TPair<FGate, float Gcost>> OutGates
 // basically GetPath with GlobalGoal Heuristic.
 void FPathFinder::GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, TMap<FIntPoint, TPair<FGate, float>>& OutGates)
 {
-	// add every neighboring chunk that's reachable to TMap. (as a form of FGate)
+	// let's add every neighboring chunk that's reachable to TMap. (as a form of FGate)
+	OutGates.Empty();
+
 	FIntPoint Chunk = GetChunk(StartGate.B);
+	FIntPoint FromChunk = GetChunk(StartGate.A);
+
+	if (Chunk != FromChunk) // if we came from other chunk.
+	{ OutGates.Add(FromChunk, TPair<FGate, float>(FGate(StartGate.B, StartGate.A), GetGlobalMoveCost(StartGate.B, StartGate.A))); }
 
 	// FIntPoint Chunk = GetChunk(StartGate.EndGate);
 	FIntPoint Start = GlobalToLocal(Chunk, StartGate.B);
@@ -100,28 +285,49 @@ void FPathFinder::GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, 
 			return;
 		}
 
+		FNode& NodeNow = Frontier[GetFlatIndex(Current)];
+
 		// ----------if met potential gate. (chunk boundary)---------
 		if ( IsOnBoundary(Current) )
 		{
 			// find possible edges.
 			TArray<FIntPoint> NeighborsTemp;
 			GetNeighbors(Current, NeighborsTemp);
-			TArray<FIntPoint> Edges;
+			TArray<TPair<FIntPoint, float>> Edges;
 			for (auto& Neighbor : NeighborsTemp)
 			{
-				if ( !IsInBoundary(Neighbor) )
-				{
-					Edges.Add(Neighbor);
+				if ( !IsInBoundary(Neighbor) 
+					&& !OutGates.Contains( GetChunk( Neighbor ) )
+					&& GetTanSqr(Chunk, Current, Neighbor) <= MaxSlopeTanSqr) 
+				{	
+					// out of boundary (gate) && Not a already found gate && slope traversable
+					// this fills outgates with gates that are found first.
+					// Total Cost + To Next Cost + Heuristic
+					float FCost = NodeNow.GCost + GetMoveCost(Chunk, Current, Neighbor) + GetMoveCost(Chunk, Neighbor, Goal);
+					Edges.Add( TPair<FIntPoint, float>( Neighbor, FCost ) );
 				}
 			}
-
-
+			TPair<FIntPoint, float> BestGate;
+			BestGate.Value = INFLOAT;
+			for (auto& Edge : Edges) // find the best one.
+			{
+				if (Edge.Value < BestGate.Value)  BestGate = Edge;
+			}
+			if (BestGate.Value != INFLOAT) // if found, add to OutGates
+			{
+				FGate GlobalGate = FGate(LocalToGlobal(Chunk, Current), LocalToGlobal(Chunk, BestGate.Key));
+				FIntPoint NextChunk = GetChunk(GlobalGate.B);
+				float GCost = NodeNow.GCost + GetMoveCost(Chunk, Current, BestGate.Key);
+				OutGates.Add(NextChunk, TPair<FGate, float>(GlobalGate, GCost));
+			}
 		}
+
+		// ----------------if all gates are found----------------
+		if (OutGates.Num() >= 8) { return; }
 
 
 		// ---------if didn't meet goal---------
 		TArray<FIntPoint> Neighbors;
-		FNode& NodeNow = Frontier[GetFlatIndex(Current)];
 		GetNeighbors(Current, Neighbors);
 		for (auto& Neighbor : Neighbors)
 		{
@@ -182,13 +388,15 @@ void FPathFinder::GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, 
 		}
 
 
-	}
+	} // while end.
 
 
+	// if some gates are not found, It'll just end after looking every cell.
 	return;
 }
 
 // find path, but do it on (0,0) local chunk.
+// returns global FIntPoint path.
 bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<FIntPoint>& OutPath, bool DrawDebug)
 {
 	FIntPoint Chunk = GetChunk(StartGate.B);
@@ -271,18 +479,14 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 
 			// adding continuous connection ( gate )
 			if (EndGate.A != EndGate.B) // if it's a gate. not endpoint.
-			{
-				ReversePath.Add( GlobalToLocal(Chunk,EndGate.B) );
-			}
+			{ ReversePath.Add( GlobalToLocal(Chunk, EndGate.B) ); }
 			while (Current != NoConnection)
 			{
 				ReversePath.Add(Current);
 				Current = Frontier[GetFlatIndex(Current)].CameFrom;
 			}
 			if (StartGate.A != StartGate.B) // if it's a gate, not startpoint.
-			{
-				ReversePath.Add( GlobalToLocal(Chunk, StartGate.A) );
-			}
+			{ ReversePath.Add( GlobalToLocal(Chunk, StartGate.A) ); }
 			OutPath.Empty();
 			OutPath.SetNum(ReversePath.Num());
 			for (int32 i = 0; i < ReversePath.Num(); i++)
@@ -363,7 +567,8 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 }
 
 // line of sight. added if thingys to make it work on gates.
-void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
+// returnss global FIntPoint path
+void FPathFinder::SmoothPath(TArray<FIntPoint>& Path)
 {
 	if (Path.IsEmpty() || Path.Num() < 3)
 	{
@@ -373,10 +578,11 @@ void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
 	bool IsStart = true;
 	bool IsEnd = true;
 
+	FIntPoint Chunk = GetChunk(Path[1]);
 	TArray<FIntPoint> SmoothPath;
 	int32 CheckPoint = 0;
 	int32 CurrentPoint = 1;
-	if ( !IsInBoundary(Path[0]) ) // if first one is out of boundary. this means it's a gate. (not the beginning)
+	if ( !IsInBoundary( GlobalToLocal(Chunk, Path[0]) ) ) // if first one is out of boundary. this means it's a gate. (not the beginning)
 	{
 		// start line of sight from second point.
 		IsStart = false;
@@ -395,7 +601,7 @@ void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
 
 	while (CurrentPoint < LastPoint)
 	{
-		if (IsWalkable(Chunk, Path[CheckPoint], Path[CurrentPoint]))
+		if (IsWalkable(Chunk, GlobalToLocal(Chunk, Path[CheckPoint]), GlobalToLocal(Chunk, Path[CurrentPoint]) ))
 		{
 			CurrentPoint++;
 		}
@@ -456,30 +662,33 @@ void FPathFinder::SmoothPath(const FIntPoint& Chunk, TArray<FIntPoint>& Path)
 
 }
 
-// returns full path made from SmoothPath. 0,0 chunk Local Coordinate(except height).
-void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath)
+// returns full path made from SmoothPath.
+// returns global FVector Path.
+void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath)
 {
 	// make 'turn radius' turns. SmoothPath ensures 15m radius.
 	// plot every x meter point. for adequate spline and road mesh. x = vertexspacing should work fine.
 	// check heights.
 	// check lastgate - chunk start - chunk end - nextgate
 
-	if (SmoothPath.Num() < 2)
+	if (SmoothPath.Num() < 3)
 	{
 		return;
 	}
+
+	FIntPoint Chunk = GetChunk(SmoothPath[1]);
 
 	bool IsStart = true;
 	bool IsEnd = true;
 	int32 Start = 0;
 	int32 End = SmoothPath.Num() - 1;
 
-	if ( !IsInBoundary(SmoothPath[0]) )
+	if ( !IsInBoundary( GlobalToLocal(Chunk, SmoothPath[0]) ) )
 	{
 		IsStart = false;
 		Start = 1;
 	}
-	if ( !IsInBoundary( SmoothPath.Last() ) )
+	if ( !IsInBoundary( GlobalToLocal(Chunk, SmoothPath.Last()) ) )
 	{
 		IsEnd = false;
 		End = SmoothPath.Num() - 2;
@@ -502,12 +711,12 @@ void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& S
 		TArray<FVector2D> CurveArc;
 		bool bGotCurve = GetCurve(LastDirection, Current, Next, CurveArc, TurnRadius); // curve arc contains current.
 
-		UE_LOG(LogTemp, Warning, TEXT("Curve Num %d"), CurveArc.Num());
-		for (auto& Elem : CurveArc)
-		{
-			DrawDebugPoint( pLM->GetWorld(), LocalToGlobal(Chunk, Elem), 10.0f, FColor::Blue, true );
-			OutPath.Add(LocalToGlobal(Chunk,Elem));
-		}
+		//UE_LOG(LogTemp, Warning, TEXT("Curve Num %d"), CurveArc.Num());
+		//for (auto& Elem : CurveArc)
+		//{
+		//	DrawDebugPoint( pLM->GetWorld(), LocalToGlobal(Chunk, Elem), 10.0f, FColor::Blue, true );
+		//	OutPath.Add(LocalToGlobal(Chunk,Elem));
+		//}
 		
 		// LINE PART
 		FVector2D LineStart = Current;
@@ -515,13 +724,13 @@ void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& S
 
 		float Step = pLM->VertexSpacing * 2;
 		FVector2D Direction = (Next - LineStart).GetSafeNormal();
-		FVector2D Temp = LineStart + Direction;
+		FVector2D Temp = LineStart;
 		float DistSqr = FVector2D::DistSquared(LineStart, Next);
 		float RadSqr = FMath::Square(pLM->VertexSpacing);
 
 		while (FVector2D::DistSquared(LineStart, Temp) < DistSqr && FVector2D::DistSquared(Temp , Next) >= RadSqr)
 		{
-			OutPath.Add( FVector( Temp.X, Temp.Y, GetHeight(Chunk, Temp) ) ); // add Pivots between Current and Next
+			OutPath.Add( FVector( Temp.X, Temp.Y, pLM->GetHeight(Temp) ) ); // add Pivots between Current and Next
 			Temp += Direction*Step; // go another step.
 		} // this won't add the last 'Next' point
 
@@ -532,12 +741,12 @@ void FPathFinder::RebuildPath(const FIntPoint& Chunk, const TArray<FIntPoint>& S
 	FVector Last;
 	if (!IsEnd) // if not endgoal, actual last one is on next chunk.
 	{
-		Last = FVector(SmoothPath[End-1].X + 0.5f, SmoothPath[End-1].Y + 0.5f, 0.f) * pLM->VertexSpacing;
-		Last.Z = GetHeight(Chunk, FVector2D(Last.X, Last.Y));
+		FVector2D Last2 = GridToCell(SmoothPath[End - 1]);
+		Last = FVector(Last2.X, Last2.Y, GetHeight(SmoothPath[End-1]));
 		OutPath.Add(Last);
 	}
-	Last = FVector(SmoothPath.Last().X + 0.5f, SmoothPath.Last().Y + 0.5f, 0.f) * pLM->VertexSpacing;
-	Last.Z = GetHeight(Chunk, FVector2D(Last.X, Last.Y));
+	FVector2D Last2D = GridToCell(SmoothPath.Last());
+	Last = FVector(Last2D.X, Last2D.Y, GetHeight(SmoothPath.Last()));
 	OutPath.Add(Last);
 
 	UE_LOG(LogTemp, Warning, TEXT("RebuildPath Num %d"), OutPath.Num());
@@ -637,6 +846,11 @@ float FPathFinder::GetMoveCost(const FIntPoint& A, const FIntPoint& B)
 	int dx = FMath::Abs(A.X - B.X);
 	int dy = FMath::Abs(A.Y - B.Y);
 	return (dx + dy) + (SQRT2 - 2) * FMath::Min(dx, dy); // manhattan distance - diagonal movement
+}
+
+float FPathFinder::GetGlobalMoveCost(const FIntPoint& GlobalA, const FIntPoint& GlobalB)
+{
+	return GetMoveCost(GlobalA, GlobalB) + FMath::Abs(GetCellHeight(GlobalA) - GetCellHeight(GlobalB));
 }
 
 // use manhattan dist on height
@@ -765,6 +979,12 @@ int32 FPathFinder::GetFlatIndex(const FIntPoint& Index2D)
 	return FlatIndex;
 }
 
+int32 FPathFinder::GetFlatIndex(const FIntPoint& Index2D, const int32& RowNum)
+{
+	int32 FlatIndex = Index2D.Y * RowNum + Index2D.X;
+	return FlatIndex;
+}
+
 FIntPoint FPathFinder::GetIndex2D(const int32& FlatIndex)
 {
 	FIntPoint Index2D;
@@ -823,7 +1043,7 @@ bool FPathFinder::IsNeighbor(const FIntPoint& A, const FIntPoint& B)
 
 bool FPathFinder::IsInBoundary(const FIntPoint& LocalGrid)
 {
-	FIntPoint A = LocalGrid;
+	const FIntPoint& A = LocalGrid; // just changing name
 	int32 Boundary = pLM->VerticesPerChunk - 1;
 	if (A.X >= 0 && A.X < Boundary 
 		&& 
@@ -832,6 +1052,16 @@ bool FPathFinder::IsInBoundary(const FIntPoint& LocalGrid)
 	else
 	{ return false; }
 
+}
+
+bool FPathFinder::IsInBoundary(const FIntPoint& LocalGrid, const FIntPoint& BoxSize)
+{
+	const FIntPoint& A = LocalGrid; // just changing name
+	if (A.X >= 0 && A.X < BoxSize.X
+		&&
+		A.Y >= 0 && A.Y < BoxSize.Y)
+	{ return true; }
+	else return false;
 }
 
 bool FPathFinder::IsOnBoundary(const FIntPoint& LocalGrid)
