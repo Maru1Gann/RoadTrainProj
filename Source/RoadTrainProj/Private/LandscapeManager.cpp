@@ -71,8 +71,8 @@ void ALandscapeManager::Debug()
 
 	FIntPoint TargetChunk = GetChunk(Start);
 
-	DrawDebugPoint( GetWorld(), GridToVector(Start), 15.f, FColor::Cyan, true );
-	DrawDebugPoint( GetWorld(), GridToVector(End), 15.f, FColor::Cyan, true );
+	//DrawDebugPoint( GetWorld(), GridToVector(Start), 15.f, FColor::Cyan, true );
+	//DrawDebugPoint( GetWorld(), GridToVector(End), 15.f, FColor::Cyan, true );
 
 	TArray<FGate> GatePath;
 	PathFinder->GetGatePath(Start, End, GatePath);
@@ -80,20 +80,20 @@ void ALandscapeManager::Debug()
 	for (auto& Gate : GatePath)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Gate from to %s %s"), *GetChunk( Gate.A ).ToString(), *GetChunk( Gate.B ).ToString());
-		DrawDebugPoint(
-			GetWorld(),
-			GridToVector(Gate.A),
-			15.f,
-			FColor::Cyan,
-			true
-		);
-		DrawDebugPoint(
-			GetWorld(),
-			GridToVector(Gate.B),
-			15.f,
-			FColor::Blue,
-			true
-		);
+		//DrawDebugPoint(
+		//	GetWorld(),
+		//	GridToVector(Gate.A),
+		//	15.f,
+		//	FColor::Red,
+		//	true
+		//);
+		//DrawDebugPoint(
+		//	GetWorld(),
+		//	GridToVector(Gate.B),
+		//	15.f,
+		//	FColor::Red,
+		//	true
+		//);
 	}
 
 	for (int32 i = 0; i < GatePath.Num()-1; i++)
@@ -101,16 +101,16 @@ void ALandscapeManager::Debug()
 		FIntPoint Chunk = GetChunk(GatePath[i].B);
 		TArray<FIntPoint> Path;
 		PathFinder->GetPath(GatePath[i], GatePath[i + 1], Path);
-		for (auto& Point : Path)
-		{	DrawDebugPoint(GetWorld(), GridToVector(Point), 3.f, FColor::White, true); }
+		/*for (auto& Point : Path)
+		{	DrawDebugPoint(GetWorld(), GridToVector(Point), 3.f, FColor::White, true); }*/
 		PathFinder->SmoothPath(Path);
 		for (auto& Point : Path)
-		{ DrawDebugPoint(GetWorld(), GridToVector(Point), 5.f, FColor::Black, true); }
+		{ DrawDebugPoint(GetWorld(), GridToVector(Point), 10.f, FColor::Black, true); }
 		TArray<FVector> ActualPath;
 		PathFinder->RebuildPath(Path, ActualPath);
-		for (auto& Point : ActualPath)
-		{ DrawDebugPoint(GetWorld(), Point, 8.f, FColor::Cyan, true); }
-		AddPathSpline(Chunk, Path);
+		/*for (auto& Point : ActualPath)
+		{ DrawDebugPoint(GetWorld(), Point, 15.f, FColor::Cyan, true); }*/
+		/*AddPathSpline(Chunk, Path);*/
 	}
 
 
@@ -290,7 +290,7 @@ void ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FVect
 	USplineComponent* Spline = NewObject<USplineComponent>(pRMA); // add spline component
 	Spline->RegisterComponent(); // register to world.
 	Spline->AttachToComponent(pRMA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
-	//Spline->SetRelativeLocation(FVector::ZeroVector);
+	Spline->SetRelativeLocation(FVector::ZeroVector);
 	Spline->ClearSplinePoints(false);
 	Spline->SetMobility(EComponentMobility::Static);
 
@@ -312,8 +312,8 @@ void ALandscapeManager::MakeRoad(USplineComponent* Spline)
 	{
 		USplineMeshComponent* SplineMesh = NewObject<USplineMeshComponent>(Spline->GetOwner());
 		SplineMesh->RegisterComponent();
-		SplineMesh->AttachToComponent(Spline, FAttachmentTransformRules::KeepRelativeTransform);
-		SplineMesh->SetRelativeLocation(FVector::ZeroVector);
+		SplineMesh->AttachToComponent(Spline, FAttachmentTransformRules::KeepWorldTransform);
+		SplineMesh->SetWorldLocation(FVector::ZeroVector);
 		
 		FVector StartPos, StartTangent, EndPos, EndTangent;
 		StartPos = Spline->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::World);

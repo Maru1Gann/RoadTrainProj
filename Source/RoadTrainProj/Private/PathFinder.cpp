@@ -127,8 +127,7 @@ bool FPathFinder::GetGatePath(const FIntPoint& StartCell, const FIntPoint& EndCe
 
 		FGate* CurrentGate = GateMap.Find(Current);
 		if (!CurrentGate) 
-		{ UE_LOG(LogTemp, Warning, TEXT("CurrentGate Nullptr. Error")); return false; }
-		UE_LOG(LogTemp, Warning, TEXT("Current(Offset) %s, CurrentGate(Global) %s to %s"), *Current.ToString(), *(*CurrentGate).A.ToString(), *(*CurrentGate).B.ToString());
+		{ UE_LOG(LogTemp, Warning, TEXT("CurrentGate Nullptr Error")); return false; }
 
 		// ----------if met goal---------
 		if (Current == End)
@@ -395,8 +394,9 @@ void FPathFinder::GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, 
 	return;
 }
 
-// find path, but do it on (0,0) local chunk.
+// find path from StartGate.B to EndGate.A, but do it on (0,0) local chunk.
 // returns global FIntPoint path.
+// SGate.A, SGate.B, ~Calculated Path~ , EGate.A, EGate.B
 bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<FIntPoint>& OutPath, bool DrawDebug)
 {
 	FIntPoint Chunk = GetChunk(StartGate.B);
@@ -478,15 +478,13 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 			ReversePath.Empty();
 
 			// adding continuous connection ( gate )
-			if (EndGate.A != EndGate.B) // if it's a gate. not endpoint.
-			{ ReversePath.Add( GlobalToLocal(Chunk, EndGate.B) ); }
+			ReversePath.Add( GlobalToLocal(Chunk, EndGate.B) );
 			while (Current != NoConnection)
 			{
 				ReversePath.Add(Current);
 				Current = Frontier[GetFlatIndex(Current)].CameFrom;
 			}
-			if (StartGate.A != StartGate.B) // if it's a gate, not startpoint.
-			{ ReversePath.Add( GlobalToLocal(Chunk, StartGate.A) ); }
+			ReversePath.Add( GlobalToLocal(Chunk, StartGate.A) );
 			OutPath.Empty();
 			OutPath.SetNum(ReversePath.Num());
 			for (int32 i = 0; i < ReversePath.Num(); i++)
@@ -570,7 +568,7 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 // returnss global FIntPoint path
 void FPathFinder::SmoothPath(TArray<FIntPoint>& Path)
 {
-	if (Path.IsEmpty() || Path.Num() < 3)
+	if ( Path.IsEmpty() || Path.Num() < 5 ) // at least 5 to do some skipping.
 	{
 		return;
 	}
@@ -580,26 +578,18 @@ void FPathFinder::SmoothPath(TArray<FIntPoint>& Path)
 
 	FIntPoint Chunk = GetChunk(Path[1]);
 	TArray<FIntPoint> SmoothPath;
-	int32 CheckPoint = 0;
-	int32 CurrentPoint = 1;
-	if ( !IsInBoundary( GlobalToLocal(Chunk, Path[0]) ) ) // if first one is out of boundary. this means it's a gate. (not the beginning)
-	{
-		// start line of sight from second point.
+	if(Path[0] != Path[1]) // this thing is a gate. not a startpoint
+	{ 
+		SmoothPath.Add(Path[0]); 
 		IsStart = false;
-		SmoothPath.Add(Path[CheckPoint++]);
-		CurrentPoint++;
 	}
+	
+	int32 LastIndex = Path.Num() - 1;
+	int32 CheckPoint = 1;
+	int32 CurrentPoint = 2;
 	SmoothPath.Add(Path[CheckPoint]);
 
-	int32 LastPoint = Path.Num();
-	if (!IsInBoundary(Path.Last())) // if last one is out of boundary. this means it's not the endgoal.
-	{
-		// end before last point.
-		IsEnd = false;
-		LastPoint--;
-	}
-
-	while (CurrentPoint < LastPoint)
+	while (CurrentPoint <= LastIndex - 2 )
 	{
 		if (IsWalkable(Chunk, GlobalToLocal(Chunk, Path[CheckPoint]), GlobalToLocal(Chunk, Path[CurrentPoint]) ))
 		{
@@ -613,53 +603,41 @@ void FPathFinder::SmoothPath(TArray<FIntPoint>& Path)
 		}
 	}
 
-	if (IsEnd) // if not endgoal
-	{
-		SmoothPath.Add(Path[Path.Num() - 2]); // this is the last one in the chunk. (if not endgoal)
+	SmoothPath.Add(Path[LastIndex - 1]);
+	if (Path[LastIndex - 1] != Path[LastIndex]) // not a goal. it's a gate
+	{ 
+		SmoothPath.Add(Path.Last()); 
+		IsEnd = false;
 	}
-	SmoothPath.Add(Path.Last()); // this is out of chunk boundary
-	
+
+	int32 StartIndex = 0;
+	LastIndex = SmoothPath.Num() - 1;
+
+	if (!IsStart) Path.Add(SmoothPath[0]);
+	else StartIndex++;
+
+	if (IsEnd) LastIndex--;
+
 	Path.Empty();
-
-	// Set to ignore 5x5 neighbor
-	TSet<FIntPoint> TwoBlock;
-	for (int32 i = -2; i <= 2; i++)
+	CheckPoint = StartIndex;
+	CurrentPoint = StartIndex + 1;
+	Path.Add(SmoothPath[CheckPoint]);
+	while(CheckPoint <= LastIndex)
 	{
-		for (int32 j = -2; j <= 2; j++)
+		float UnitDistSqr = GetUnitDistSqr(SmoothPath[CheckPoint], SmoothPath[CurrentPoint]);
+		if (UnitDistSqr < FMath::Square(3) ) // Square(Turning Radius*2)
 		{
-			TwoBlock.Add(FIntPoint(j, i));
+			CurrentPoint++; // skip
+		}
+		else
+		{
+			CheckPoint = CurrentPoint;
+			Path.Add(SmoothPath[CheckPoint]);
+			CurrentPoint++;
 		}
 	}
 
-	int32 Start = 0;
-	int32 End = SmoothPath.Num() - 2;
-	if (!IsStart)
-	{
-		Path.Add(SmoothPath[0]);
-		Start++;
-	}
-	if (!IsEnd)
-	{
-		End--;
-	}
-
-	for (int32 i = Start; i < End; i++)
-	{
-		Path.Add(SmoothPath[i]);
-		int32 temp = i + 1;
-		while ( TwoBlock.Contains(SmoothPath[temp] - SmoothPath[i]) ) // not in 5x5 neighbors
-		{
-			temp++;
-		}
-		i = temp;
-	}
-
-	if (!IsEnd)
-	{
-		Path.Add(SmoothPath[SmoothPath.Num() - 2]);
-	}
-	Path.Add(SmoothPath.Last());
-
+	if (!IsEnd) Path.Add(SmoothPath.Last());
 }
 
 // returns full path made from SmoothPath.
@@ -671,28 +649,12 @@ void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVecto
 	// check heights.
 	// check lastgate - chunk start - chunk end - nextgate
 
-	if (SmoothPath.Num() < 3)
+	if (SmoothPath.Num() < 2 )
 	{
 		return;
 	}
 
 	FIntPoint Chunk = GetChunk(SmoothPath[1]);
-
-	bool IsStart = true;
-	bool IsEnd = true;
-	int32 Start = 0;
-	int32 End = SmoothPath.Num() - 1;
-
-	if ( !IsInBoundary( GlobalToLocal(Chunk, SmoothPath[0]) ) )
-	{
-		IsStart = false;
-		Start = 1;
-	}
-	if ( !IsInBoundary( GlobalToLocal(Chunk, SmoothPath.Last()) ) )
-	{
-		IsEnd = false;
-		End = SmoothPath.Num() - 2;
-	}
 
 	OutPath.Empty();
 
@@ -700,7 +662,7 @@ void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVecto
 	//FVector2D LastDirection(1, 0);
 	float TurnRadius = pLM->VertexSpacing * 1.5 ; // should fix this later.
 
-	for (int32 i = Start; i < End; i++) // make sure i+1 don't go out of index.
+	for (int32 i = 0; i < SmoothPath.Num()-1; i++) // make sure i+1 don't go out of index.
 	{
 
 		FVector2D Current = GridToCell(SmoothPath[i]);
@@ -739,12 +701,6 @@ void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVecto
 
 	// add the last 'Next'
 	FVector Last;
-	if (!IsEnd) // if not endgoal, actual last one is on next chunk.
-	{
-		FVector2D Last2 = GridToCell(SmoothPath[End - 1]);
-		Last = FVector(Last2.X, Last2.Y, GetHeight(SmoothPath[End-1]));
-		OutPath.Add(Last);
-	}
 	FVector2D Last2D = GridToCell(SmoothPath.Last());
 	Last = FVector(Last2D.X, Last2D.Y, GetHeight(SmoothPath.Last()));
 	OutPath.Add(Last);
