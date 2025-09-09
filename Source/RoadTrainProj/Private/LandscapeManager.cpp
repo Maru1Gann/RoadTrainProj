@@ -74,43 +74,52 @@ void ALandscapeManager::Debug()
 	//DrawDebugPoint( GetWorld(), GridToVector(Start), 15.f, FColor::Cyan, true );
 	//DrawDebugPoint( GetWorld(), GridToVector(End), 15.f, FColor::Cyan, true );
 
+	//for (auto& Elem : Gates)
+	//{
+	//	FIntPoint ToChunk = Elem.Key;
+	//	FGate Gate = Elem.Value.Key;
+	//	float GCost = Elem.Value.Value;
+	//	UE_LOG(LogTemp, Warning, TEXT("To %s, Cost %f"), *ToChunk.ToString(), GCost);
+	//	DrawDebugPoint(GetWorld(), GridToVector(Gate.A), 8.f, FColor::Red, true);
+	//	DrawDebugPoint(GetWorld(), GridToVector(Gate.B), 8.f, FColor::Red, true);
+	//}
+
 	TArray<FGate> GatePath;
 	PathFinder->GetGatePath(Start, End, GatePath);
-	UE_LOG(LogTemp, Warning, TEXT("GatePathNum %d"), GatePath.Num());
-	for (auto& Gate : GatePath)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Gate from to %s %s"), *GetChunk( Gate.A ).ToString(), *GetChunk( Gate.B ).ToString());
-		//DrawDebugPoint(
-		//	GetWorld(),
-		//	GridToVector(Gate.A),
-		//	15.f,
-		//	FColor::Red,
-		//	true
-		//);
-		//DrawDebugPoint(
-		//	GetWorld(),
-		//	GridToVector(Gate.B),
-		//	15.f,
-		//	FColor::Red,
-		//	true
-		//);
-	}
+	//UE_LOG(LogTemp, Warning, TEXT("GatePathNum %d"), GatePath.Num());
+	//for (auto& Gate : GatePath)
+	//{
+	//	 UE_LOG(LogTemp, Warning, TEXT("Gate from to %s %s"), *GetChunk( Gate.A ).ToString(), *GetChunk( Gate.B ).ToString());
+	//	DrawDebugPoint(
+	//		GetWorld(),
+	//		GridToVector(Gate.A),
+	//		15.f,
+	//		FColor::Red,
+	//		true
+	//	);
+	//	DrawDebugPoint(
+	//		GetWorld(),
+	//		GridToVector(Gate.B),
+	//		15.f,
+	//		FColor::Red,
+	//		true
+	//	);
+	//}
 
 	for (int32 i = 0; i < GatePath.Num()-1; i++)
 	{
 		FIntPoint Chunk = GetChunk(GatePath[i].B);
 		TArray<FIntPoint> Path;
 		PathFinder->GetPath(GatePath[i], GatePath[i + 1], Path);
-		/*for (auto& Point : Path)
-		{	DrawDebugPoint(GetWorld(), GridToVector(Point), 3.f, FColor::White, true); }*/
+		int32 Last = Path.Num() - 1;
+		for (auto& Point : Path)
+		{ DrawDebugPoint(GetWorld(), GridToVector(Point), 3.f, FColor::Cyan, true); }
 		PathFinder->SmoothPath(Path);
 		for (auto& Point : Path)
-		{ DrawDebugPoint(GetWorld(), GridToVector(Point), 10.f, FColor::Black, true); }
+		{ DrawDebugPoint(GetWorld(), GridToVector(Point), 10.f, FColor::Orange, true); }
 		TArray<FVector> ActualPath;
 		PathFinder->RebuildPath(Path, ActualPath);
-		/*for (auto& Point : ActualPath)
-		{ DrawDebugPoint(GetWorld(), Point, 15.f, FColor::Cyan, true); }*/
-		/*AddPathSpline(Chunk, Path);*/
+		AddPathSpline(Chunk, ActualPath);
 	}
 
 
@@ -249,33 +258,6 @@ void ALandscapeManager::GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& 
 	return;
 }
 
-void ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FIntPoint>& Path)
-{
-	ARealtimeMeshActor** ppRMA = Chunks.Find(Chunk);
-	if(!ppRMA)
-	{ return; }
-	
-	ARealtimeMeshActor* pRMA = (*ppRMA);
-
-	USplineComponent* Spline = NewObject<USplineComponent>(pRMA); // add spline component
-	Spline->RegisterComponent(); // register to world.
-	Spline->AttachToComponent( pRMA->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform );
-	Spline->SetRelativeLocation(FVector::ZeroVector);
-	Spline->ClearSplinePoints(false);
-	Spline->SetMobility(EComponentMobility::Static);
-
-	// add spline points.
-	for (auto& Pos : Path)
-	{
-		FIntPoint WorldPos = Chunk * (VerticesPerChunk - 1) + Pos;
-		FVector WorldVector = FVector(WorldPos.X + 0.5f, WorldPos.Y + 0.5f, 0.f) * VertexSpacing;
-		WorldVector.Z = GetHeight(FVector2D(WorldVector.X, WorldVector.Y));
-		Spline->AddSplinePoint( WorldVector, ESplineCoordinateSpace::World );
-	}
-	
-	MakeRoad(Spline);
-}
-
 void ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path)
 {
 	ARealtimeMeshActor** ppRMA = Chunks.Find(Chunk);
@@ -308,7 +290,7 @@ void ALandscapeManager::MakeRoad(USplineComponent* Spline)
 	if(!this->RoadMesh || !Spline)
 	{ return; }
 
-	for (int32 i = 1; i < Spline->GetNumberOfSplinePoints() - 2; i++)
+	for (int32 i = 0; i < Spline->GetNumberOfSplinePoints() - 1; i++)
 	{
 		USplineMeshComponent* SplineMesh = NewObject<USplineMeshComponent>(Spline->GetOwner());
 		SplineMesh->RegisterComponent();
