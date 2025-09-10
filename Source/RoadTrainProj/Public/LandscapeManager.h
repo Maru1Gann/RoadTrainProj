@@ -82,7 +82,6 @@ public:
     FVector GridToVector(const FIntPoint& GlobalGrid);
     FIntPoint GetChunk(const FIntPoint& GlobalGrid);
 
-
 private:
 
     std::unique_ptr<FChunkBuilder> ChunkBuilder;

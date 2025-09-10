@@ -37,9 +37,7 @@ public:
     
 
     void GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
-	void GetStreamSet(const FIntPoint& Chunk, const TArray<FIntPoint>& Path, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
     float GetHeight( const FVector2D& Location );
-	TPair<FIntPoint, FIntPoint> ChangeChunkPos(const FIntPoint& DefaultChunk, const FIntPoint& DefaultPos, const FIntPoint& TargetChunk);
 
 private:
 	// for debugging & reusing purposes, shown on editor details pannel
@@ -48,23 +46,15 @@ private:
 	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 6) )
 	    float ChunkLength;
 
-	// map for continuous chunk. save values that need to be modified but out of targetchunk boundary.
-	TMultiMap<FIntPoint, TPair<FIntPoint, float> > HeightModified;
-	TMultiMap<FIntPoint, FIntPoint > TriangleModified;
-	
-    
-    // tools blow.
+
+
+    // tools below.
     void GetVertices( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices );
-	void FlattenPath(const FIntPoint& Chunk, const TArray<FIntPoint>& Path, TArray<FVector3f>& OutVertices);
     void GetUVs( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs );
     void GetTriangles( const int32& VertexCount, TArray<uint32>& OutTriangles );
-	void AdjustTriangles(const FIntPoint& Chunk, const int32& VertexCount, const TArray<FIntPoint>& Path, TArray<uint32>& OutTriangles);
 	void MakeSquare(const int32& Index, const int32& CurrentVertex, const int32& VertexCount, TArray<uint32>& OutTriangles, bool Invert = true);
     void GetTangents(  const int32& VertexCount, const TArray<uint32>& BigTriangles, const TArray<FVector3f>& BigVertices, 
                             TArray<FVector3f>& OutTangents, TArray<FVector3f>& OutNormals );
-
-	void ApplyModified(const FIntPoint& Chunk, TArray<FVector3f>& OutVertices, TArray<uint32>& OutTriangles);
-
 	
 	int32 GetIndex(const int32& VertexCount, const FIntPoint& Pos);
 	int32 GetIndex(const FIntPoint& Pos);
@@ -75,7 +65,4 @@ private:
 
 	void GetOtherPos(const FIntPoint& DefaultChunk, const FIntPoint& DefaultPos, TArray<TPair<FIntPoint, FIntPoint>>& OutOtherPos);
 
-	FVector2D PosToVector2D(const FIntPoint& Chunk, const FIntPoint& Pos);
-
-	void SetHeight(const FIntPoint& Chunk, const FIntPoint& Pos, const float& Height, TMap<FIntPoint, float>& HeightReserved);
 };

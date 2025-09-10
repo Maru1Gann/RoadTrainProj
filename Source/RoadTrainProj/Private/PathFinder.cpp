@@ -736,8 +736,9 @@ void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVecto
 			for (auto& Elem : CurveArc)
 			{
 				FVector Temp = FVector(Elem.X, Elem.Y, pLM->GetHeight(Elem));
-				DrawDebugPoint(pLM->GetWorld(), Temp, 10.0f, FColor::Blue, true);
 				OutPath.Add(Temp);
+
+				// DrawDebugPoint(pLM->GetWorld(), Temp, 10.0f, FColor::Blue, true);
 			}
 			LineStart = CurveArc.Last();
 		}
@@ -767,7 +768,7 @@ void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVecto
 	Last = FVector(Last2D.X, Last2D.Y, GetCellHeight(SmoothPath[IndexEnd]));
 	OutPath.Add(Last);
 
-	UE_LOG(LogTemp, Warning, TEXT("RebuildPath Num %d"), OutPath.Num());
+	// UE_LOG(LogTemp, Warning, TEXT("RebuildPath Num %d"), OutPath.Num());
 	
 }
 

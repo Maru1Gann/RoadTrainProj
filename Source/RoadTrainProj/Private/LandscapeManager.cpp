@@ -110,13 +110,15 @@ void ALandscapeManager::Debug()
 	{
 		FIntPoint Chunk = GetChunk(GatePath[i].B);
 		TArray<FIntPoint> Path;
+
 		PathFinder->GetPath(GatePath[i], GatePath[i + 1], Path);
-		int32 Last = Path.Num() - 1;
 		for (auto& Point : Path)
 		{ DrawDebugPoint(GetWorld(), GridToVector(Point), 3.f, FColor::Cyan, true); }
+
 		PathFinder->SmoothPath(Path);
 		for (auto& Point : Path)
 		{ DrawDebugPoint(GetWorld(), GridToVector(Point), 10.f, FColor::Orange, true); }
+
 		TArray<FVector> ActualPath;
 		PathFinder->RebuildPath(Path, ActualPath);
 
