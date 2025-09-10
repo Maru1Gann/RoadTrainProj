@@ -119,7 +119,10 @@ void ALandscapeManager::Debug()
 		{ DrawDebugPoint(GetWorld(), GridToVector(Point), 10.f, FColor::Orange, true); }
 		TArray<FVector> ActualPath;
 		PathFinder->RebuildPath(Path, ActualPath);
-		AddPathSpline(Chunk, ActualPath);
+
+		USplineComponent* Spline = nullptr;
+		Spline = AddPathSpline(Chunk, ActualPath);
+		if (Spline) MakeRoad(Spline);
 	}
 
 
@@ -258,13 +261,13 @@ void ALandscapeManager::GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& 
 	return;
 }
 
-void ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path)
+USplineComponent* ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path)
 {
 	ARealtimeMeshActor** ppRMA = Chunks.Find(Chunk);
 	if (!ppRMA)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("WTF"));
-		return;
+		return nullptr;
 	}
 
 	ARealtimeMeshActor* pRMA = (*ppRMA);
@@ -282,7 +285,13 @@ void ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FVect
 		Spline->AddSplinePoint(Pos, ESplineCoordinateSpace::World);
 	}
 
-	MakeRoad(Spline);
+	USplineComponent** ppSpline = Splines.Find(Chunk);
+	if (ppSpline)
+	{ (*ppSpline)->DestroyComponent(); } // if already exists, remove it
+
+	Splines.Add(Chunk, Spline); // add it to TMap.
+
+	return Spline;
 }
 
 void ALandscapeManager::MakeRoad(USplineComponent* Spline)

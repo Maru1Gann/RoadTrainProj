@@ -87,6 +87,7 @@ private:
 
     std::unique_ptr<FChunkBuilder> ChunkBuilder;
     TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
+    TMap<FIntPoint, USplineComponent*> Splines;
     float ChunkLength;
 
     std::unique_ptr<FPathFinder> PathFinder;
@@ -96,8 +97,7 @@ private:
     // tools
     void GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& OutArray);
 
-    void AddPathSpline(const FIntPoint& Chunk, const TArray<FIntPoint>& Path);
-    void AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path);
+    USplineComponent* AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path);
     void MakeRoad(USplineComponent* Spline);
 
     

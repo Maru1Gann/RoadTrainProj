@@ -706,10 +706,14 @@ void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVecto
 	if (SmoothPath[0] == SmoothPath[1])		LastDirection = (GridToCell(SmoothPath[2]) - GridToCell(SmoothPath[1])).GetSafeNormal(); // starting point
 	else									LastDirection = (GridToCell(SmoothPath[1]) - GridToCell(SmoothPath[0])).GetSafeNormal(); // gate
 	
-	float TurnRadius = pLM->VertexSpacing * 1.5 ; // should fix this later.
-	int32 LastIndex = SmoothPath.Num() - 1;
+	float TurnRadius = pLM->VertexSpacing * 1.5 ;		// should fix this later.
 
-	for (int32 i = 1; i <= LastIndex - 2; i++) // make sure i+1 don't go out of index.
+	int32 LastIndex = SmoothPath.Num() - 1;
+	int32 IndexEnd = LastIndex;							// do it to EndGate.A, EndGate.B
+	if (SmoothPath[LastIndex - 1] == SmoothPath[LastIndex]) // if global end.
+	{ IndexEnd = LastIndex - 1; }							// do it to PathLast, EndGate.A
+
+	for (int32 i = 1; i <= IndexEnd - 1; i++) // make sure i+1 don't go out of index.
 	{
 
 		FVector2D Current = GridToCell(SmoothPath[i]);
@@ -750,12 +754,17 @@ void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVecto
 			Temp += Direction*Step; // go another step.
 		}
 
-		LastDirection = Direction;
-	} // we can do more work on height smoothing. for end.
+		// we can do more work on height smoothing.
 
+		// this does not add the actual last SmoothPath.
+
+		LastDirection = Direction;
+	} 
+
+	// so we add actual last.
 	FVector Last;
-	FVector2D Last2D = GridToCell( SmoothPath[LastIndex-1] );
-	Last = FVector(Last2D.X, Last2D.Y, GetCellHeight(SmoothPath[LastIndex-1]));
+	FVector2D Last2D = GridToCell( SmoothPath[ IndexEnd ] );
+	Last = FVector(Last2D.X, Last2D.Y, GetCellHeight(SmoothPath[IndexEnd]));
 	OutPath.Add(Last);
 
 	UE_LOG(LogTemp, Warning, TEXT("RebuildPath Num %d"), OutPath.Num());
@@ -763,6 +772,9 @@ void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVecto
 }
 
 
+
+
+// ---- private -----
 
 bool FPathFinder::IsWalkable(const FIntPoint& Chunk, const FIntPoint& A, const FIntPoint& B)
 {
@@ -900,17 +912,24 @@ bool FPathFinder::GetCurve(const FVector2D& StartDirection, const FVector2D& Cur
 	{
 		return false;
 	}
+	float CurNextDist = FVector2D::Distance(Current, Next);
+	if ( CurNextDist < TurnRadius * 2 )
+	{
+		return false;
+	}
 
-	FVector2D CenterR = Current + FVector2D(-StartDirection.Y, StartDirection.X).GetSafeNormal() * TurnRadius; // 90 degree turn. cw
-	FVector2D CenterL = Current + FVector2D(StartDirection.Y, -StartDirection.X).GetSafeNormal() * TurnRadius; // 90 degree turn. ccw
+	float NewTurnRadius = (CurNextDist / 2) * 2 / 3;
+
+	FVector2D CenterR = Current + FVector2D(-StartDirection.Y, StartDirection.X).GetSafeNormal() * NewTurnRadius; // 90 degree turn. cw
+	FVector2D CenterL = Current + FVector2D(StartDirection.Y, -StartDirection.X).GetSafeNormal() * NewTurnRadius; // 90 degree turn. ccw
 
 	// let's figure out which turn is better
 	float RArcAngle , LArcAngle;
 	RArcAngle = INFLOAT;
 	LArcAngle = INFLOAT;
 
-	RArcAngle = GetArcAngle(CenterR, Current, Next, true, TurnRadius);	// this is CW
-	LArcAngle = GetArcAngle(CenterL, Current, Next, false, TurnRadius); // this should go CCW.
+	RArcAngle = GetArcAngle(CenterR, Current, Next, true, NewTurnRadius);	// this is CW
+	LArcAngle = GetArcAngle(CenterL, Current, Next, false, NewTurnRadius); // this should go CCW.
 	
 	float ArcAngle;
 	FVector2D Center;
@@ -932,7 +951,7 @@ bool FPathFinder::GetCurve(const FVector2D& StartDirection, const FVector2D& Cur
 
 	float AngleStart = FMath::Atan2(Current.Y - Center.Y, Current.X - Center.X);
 	if (AngleStart < 0.f) AngleStart += 2 * PI;
-	float AngleStep = pLM->VertexSpacing * 2 / TurnRadius; // length of arc of the step == pLM->VertexSpacing*2 
+	float AngleStep = pLM->VertexSpacing * 2 / NewTurnRadius; // length of arc of the step == pLM->VertexSpacing*2 
 	AngleStep /= 3;
 	float ActualAngle = AngleStart + AngleStep * StepDir;
 	float AngleCounter = 0 + AngleStep;
@@ -942,13 +961,13 @@ bool FPathFinder::GetCurve(const FVector2D& StartDirection, const FVector2D& Cur
 	while ( AngleCounter <= ArcAngle - AngleStep * 2 / 3 )
 	{
 		if (ActualAngle < 0.f) ActualAngle += 2 * PI;
-		FVector2D Point = Center + FVector2D(FMath::Cos(ActualAngle) * TurnRadius, FMath::Sin(ActualAngle) * TurnRadius);
+		FVector2D Point = Center + FVector2D(FMath::Cos(ActualAngle) * NewTurnRadius, FMath::Sin(ActualAngle) * NewTurnRadius);
 		OutRoute.Add(Point);
 		ActualAngle += StepDir * AngleStep;
 		AngleCounter += AngleStep;
 	} // this doesn't include actual CircleEnd
 
-	FVector2D CircleEnd = Center + FVector2D( FMath::Cos(AngleStart + ArcAngle * StepDir), FMath::Sin(AngleStart + ArcAngle * StepDir) ) * TurnRadius;
+	FVector2D CircleEnd = Center + FVector2D( FMath::Cos(AngleStart + ArcAngle * StepDir), FMath::Sin(AngleStart + ArcAngle * StepDir) ) * NewTurnRadius;
 	OutRoute.Add( CircleEnd );
 
 	return true;
