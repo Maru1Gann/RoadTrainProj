@@ -112,8 +112,8 @@ void ALandscapeManager::Debug()
 		TArray<FIntPoint> Path;
 
 		PathFinder->GetPath(GatePath[i], GatePath[i + 1], Path);
-		for (auto& Point : Path)
-		{ DrawDebugPoint(GetWorld(), GridToVector(Point), 3.f, FColor::Cyan, true); }
+		//for (auto& Point : Path)
+		//{ DrawDebugPoint(GetWorld(), GridToVector(Point), 3.f, FColor::Cyan, true); }
 
 		PathFinder->SmoothPath(Path);
 		for (auto& Point : Path)
@@ -125,7 +125,26 @@ void ALandscapeManager::Debug()
 		USplineComponent* Spline = nullptr;
 		Spline = AddPathSpline(Chunk, ActualPath);
 		if (Spline) MakeRoad(Spline);
+
+		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+		TArray<FIntPoint> DebugArray;
+		TArray<FVector3f> DebugArray2;
+
+		ChunkBuilder->GetPathStreamSet(Chunk, ActualPath, StreamSet, DebugArray, DebugArray2);
+		
+		for (auto& Grid : DebugArray)
+		{
+			DrawDebugPoint(GetWorld(), GridToVector(Grid), 8.f, FColor::Emerald, true);
+		}
+		for (auto& Local : DebugArray2)
+		{
+			FVector Offset = FVector(Chunk.X, Chunk.Y, 0.f) * ChunkLength;
+			FVector Global = FVector(Local.X, Local.Y, Local.Z) + Offset;
+			DrawDebugPoint(GetWorld(), Global, 6.f, FColor::Blue, true);
+		}
 	}
+
+	
 
 
 }

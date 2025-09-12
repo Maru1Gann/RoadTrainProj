@@ -99,6 +99,80 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtime
 
 }
 
+// DetailCount == how many squares will fit in one grid. (row)
+void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, TArray<FIntPoint>& DebugArray, TArray<FVector3f>& DebugArray2, const int32& DetailCount)
+{
+	if (int32(VertexSpacing) % DetailCount != 0) // does not fit.
+	{ return; }
+	float UVScale = VertexSpacing / TextureSize; // use same value with GetStreamSet.
+
+	TArray<FVector3f> Vertices, Tangents, Normals;
+	TArray<uint32> Triangles;
+	TArray<FVector2DHalf> UVs;
+
+	// x, y == local.
+
+	TSet<FIntPoint> GridWithPath;
+	TSet<FIntPoint> GridNeeded;
+	for (auto& Point : InPath) // init
+	{
+		FIntPoint GlobalGrid = GetGlobalGrid(Point);
+
+		GridWithPath.Add(GlobalGrid);
+
+		for (int32 j = -2; j <= 2; j++)
+		{
+			for (int32 i = -2; i <= 2; i++)
+			{
+				FIntPoint Needed = FIntPoint(i,j) + GlobalGrid;
+				if(IsGridInChunk(Chunk, Needed)) GridNeeded.Add(Needed);
+			}
+		}
+	} // init end.
+	
+	auto Sorter = [](const FIntPoint& A, const FIntPoint& B)
+		{
+			if (A.Y < B.Y) return true;
+			else if (A.Y == B.Y)
+			{
+				return A.X < B.X;
+			}
+			else return false;
+		};
+
+	GridNeeded.Sort(Sorter);
+	DebugArray.Reserve(GridNeeded.Num());
+	float DetailSpacing = VertexSpacing / DetailCount;
+	TSet<FIntPoint> DetailNeeded;
+	for (auto& GlobalGrid : GridNeeded)
+	{
+		DebugArray.Add(GlobalGrid);
+
+		// add vertices needed.
+		for (int32 j = 0; j <= DetailCount; j++)
+		{
+			for (int32 i = 0; i <= DetailCount; i++)
+			{
+				FIntPoint DetailGrid = FIntPoint(i, j);
+				FIntPoint Offset = GlobalGrid * DetailCount;
+				DetailNeeded.Add(DetailGrid + Offset);
+			}
+		}
+
+	}
+
+	for (auto& Elem : DetailNeeded)
+	{
+		FIntPoint LocalGrid = Elem - Chunk * (VerticesPerChunk - 1) * DetailCount;
+		FVector3f Vertex = FVector3f(LocalGrid.X, LocalGrid.Y, 0.f) * DetailSpacing;		// local space for vertex.
+		Vertex.Z = GetHeight( FVector2D(Elem.X, Elem.Y) * DetailSpacing );	// global space for height.
+		Vertices.Add(Vertex);
+	}
+
+	
+	DebugArray2 = Vertices;
+}
+
 // returns height made with member noiselayers
 float FChunkBuilder::GetHeight( const FVector2D& Location )
 {
@@ -193,6 +267,38 @@ void FChunkBuilder::GetTriangles(const int32& VertexCount, TArray<uint32>& OutTr
 	}
 
 	return;
+}
+
+// this returns one vertex bigger square for normal calculation.
+void FChunkBuilder::GetBigVertices(const FIntPoint& Chunk, const TArray<FVector3f>& SmallVertices, TArray<FVector3f>& OutVertices)
+{
+	OutVertices.Empty();
+	FVector2D Offset = FVector2D(Chunk.X, Chunk.Y) * ChunkLength;
+
+	for (int32 i = -1; i < VerticesPerChunk + 1; i++)
+	{
+		for (int32 j = -1; j < VerticesPerChunk + 1; j++)
+		{
+			int32 Index = GetIndex(FIntPoint(j, i));
+
+			if (IsIndexInChunk(FIntPoint(j, i)))	// if it's in small vertices, just copy.
+			{
+				OutVertices.Add(SmallVertices[Index]);
+			}
+			else									// if it's not in small vertices, make one.
+			{
+				FVector3f Vertex = FVector3f(j, i, 0.0f) * VertexSpacing;
+				if (this->ShouldGenerateHeight)
+				{
+					Vertex.Z = GetHeight(FVector2D(Vertex.X, Vertex.Y) + Offset);
+				}
+				OutVertices.Add(Vertex);
+			}
+
+
+		} // for j
+	} // for i
+
 }
 
 void FChunkBuilder::MakeSquare(const int32& Index, const int32& CurrentVertex, const int32& VertexCount, TArray<uint32>& OutTriangles, bool Invert)
@@ -298,32 +404,20 @@ int32 FChunkBuilder::GetIndex(const FIntPoint& Pos)
 	return GetIndex(VerticesPerChunk, Pos);
 }
 
-// this returns one vertex bigger square for normal calculation.
-void FChunkBuilder::GetBigVertices(const FIntPoint& Chunk, const TArray<FVector3f>& SmallVertices, TArray<FVector3f>& OutVertices)
+FIntPoint FChunkBuilder::GetChunk(const FIntPoint& GlobalGrid)
 {
-	OutVertices.Empty();
-	FVector2D Offset = FVector2D(Chunk.X, Chunk.Y) * ChunkLength;
-	
-	for (int32 i = -1; i < VerticesPerChunk + 1; i++)
-	{
-		for (int32 j = -1; j < VerticesPerChunk + 1; j++)
-		{
-			int32 Index = GetIndex(FIntPoint(j, i));
+	FIntPoint Out;
+	Out.X = FMath::FloorToInt32(float(GlobalGrid.X) / (VerticesPerChunk - 1) );
+	Out.Y = FMath::FloorToInt32(float(GlobalGrid.Y) / (VerticesPerChunk - 1) );
+	return Out;
+}
 
-			if (IsIndexInChunk(FIntPoint(j, i)))	// if it's in small vertices, just copy.
-			{ OutVertices.Add(SmallVertices[Index]); }
-			else									// if it's not in small vertices, make one.
-			{
-				FVector3f Vertex = FVector3f(j, i, 0.0f) * VertexSpacing;
-				if (this->ShouldGenerateHeight)
-				{ Vertex.Z = GetHeight(FVector2D(Vertex.X, Vertex.Y) + Offset); }
-				OutVertices.Add(Vertex);
-			}
-
-
-		} // for j
-	} // for i
-
+FIntPoint FChunkBuilder::GetGlobalGrid(const FVector& Vector)
+{
+	FIntPoint Out;
+	Out.X = FMath::FloorToInt32(Vector.X / VertexSpacing);
+	Out.Y = FMath::FloorToInt32(Vector.Y / VertexSpacing);
+	return Out;
 }
 
 bool FChunkBuilder::IsIndexInChunk(const int32& VertexCount, const FIntPoint& Index)
@@ -334,5 +428,10 @@ bool FChunkBuilder::IsIndexInChunk(const int32& VertexCount, const FIntPoint& In
 bool FChunkBuilder::IsIndexInChunk(const FIntPoint& Index)
 {
 	return IsIndexInChunk(VerticesPerChunk, Index);
+}
+
+bool FChunkBuilder::IsGridInChunk(const FIntPoint& Chunk, const FIntPoint& GlobalGrid)
+{
+	return GetChunk(GlobalGrid) == Chunk;
 }
 
