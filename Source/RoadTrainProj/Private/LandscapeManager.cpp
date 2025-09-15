@@ -2,7 +2,6 @@
 #include "LandscapeManager.h"
 #include "PerlinNoiseVariables.h"
 
-#include "Containers/Map.h" // MultiMap
 #include "Components/SplineComponent.h" // Spline
 #include "Components/SplineMeshComponent.h" // Spline Mesh
 
@@ -67,7 +66,6 @@ void ALandscapeManager::Debug()
 {
 	FlushPersistentDebugLines(GetWorld());
 	RemoveLandscape();
-	GenerateLandscape();
 
 	FIntPoint TargetChunk = GetChunk(Start);
 
@@ -122,28 +120,27 @@ void ALandscapeManager::Debug()
 		TArray<FVector> ActualPath;
 		PathFinder->RebuildPath(Path, ActualPath);
 
+		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+		ChunkBuilder->GetPathStreamSet(Chunk, ActualPath, StreamSet);
+		AddChunk(Chunk, StreamSet);
+		ChunkBuilder->GetStreamSet(Chunk, ActualPath, StreamSet);
+		AddChunk(Chunk, StreamSet);
+
 		USplineComponent* Spline = nullptr;
 		Spline = AddPathSpline(Chunk, ActualPath);
 		if (Spline) MakeRoad(Spline);
-
-		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-		TArray<FIntPoint> DebugArray;
-		TArray<FVector3f> DebugArray2;
-
-		ChunkBuilder->GetPathStreamSet(Chunk, ActualPath, StreamSet, DebugArray, DebugArray2);
-		
-		for (auto& Grid : DebugArray)
-		{
-			DrawDebugPoint(GetWorld(), GridToVector(Grid), 8.f, FColor::Emerald, true);
-		}
-		for (auto& Local : DebugArray2)
-		{
-			FVector Offset = FVector(Chunk.X, Chunk.Y, 0.f) * ChunkLength;
-			FVector Global = FVector(Local.X, Local.Y, Local.Z) + Offset;
-			DrawDebugPoint(GetWorld(), Global, 6.f, FColor::Blue, true);
-		}
 	}
 
+	for (auto& Elem : ChunkOrder)
+	{
+		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+
+		if (!Chunks.Contains(Elem))
+		{
+			ChunkBuilder->GetStreamSet(Elem, StreamSet);
+			AddChunk(Elem, StreamSet);
+		}
+	}
 	
 
 
@@ -203,7 +200,6 @@ void ALandscapeManager::AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRe
 	{ pRMC->SetMaterial(0, Material); }
 
 	// add it to status (member)
-	RemoveChunk(Chunk);
 	Chunks.Add(Chunk, pRMA);
 
 	// update configuration.
@@ -215,10 +211,14 @@ void ALandscapeManager::AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRe
 // check and remove chunk and entry from Member::Chunks TMap
 void ALandscapeManager::RemoveChunk(const FIntPoint& Chunk)
 {
-	ARealtimeMeshActor** pRMA = Chunks.Find(Chunk);
-	if (pRMA)
+	TArray<ARealtimeMeshActor*> pRMAs;
+	Chunks.MultiFind(Chunk, pRMAs);
+	for (auto pRMA : pRMAs)
 	{
-		(*pRMA)->Destroy();
+		if (pRMA)
+		{
+			pRMA->Destroy();
+		}
 	}
 
 }

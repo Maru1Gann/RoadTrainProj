@@ -37,8 +37,8 @@ public:
     
 
     void GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
-	void GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, 
-		TArray<FIntPoint>& DebugArray, TArray<FVector3f>& DebugArray2, const int32& DetailCount = 10);
+	void GetStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
+	void GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, const int32& DetailCount = 10);
     float GetHeight( const FVector2D& Location );
 
 private:
@@ -52,6 +52,7 @@ private:
 
     // tools below.
     void GetVertices( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices );
+	void AdjustHeight(const FIntPoint& Chunk, const TArray<FVector>& InPath, TArray<FVector3f>& OutVertices);
     void GetUVs( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs );
     void GetTriangles( const int32& VertexCount, TArray<uint32>& OutTriangles );
     void GetTangents(  const int32& VertexCount, const TArray<uint32>& BigTriangles, const TArray<FVector3f>& BigVertices, 

@@ -6,6 +6,7 @@
 #include "RealtimeMeshSimple.h"         // RealtimeMesh namespace
 #include "RealtimeMeshActor.h"          // AReltimeMeshActor
 #include "Mesh/RealtimeMeshAlgo.h"      // RealtimeMeshAlgo
+#include "Containers/Map.h"             // MultiMap
 
 #include "PathFinder.h"
 #include "ChunkBuilder.h"
@@ -85,7 +86,7 @@ public:
 private:
 
     std::unique_ptr<FChunkBuilder> ChunkBuilder;
-    TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
+    TMultiMap<FIntPoint, ARealtimeMeshActor*> Chunks;
     TMap<FIntPoint, USplineComponent*> Splines;
     float ChunkLength;
 
