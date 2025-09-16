@@ -25,6 +25,7 @@ FChunkBuilder::FChunkBuilder( ALandscapeManager* pLM, UMaterialInterface* ChunkM
 
 	// need to be updated in LandscapeManager::OnConstruction()
 	ChunkLength = VertexSpacing * (VerticesPerChunk - 1); 
+	CoverageRad = 3;
 }
 
 // returns StreamSet for a Chunk
@@ -115,7 +116,6 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, const TArray<FVector>& 
 	GetVertices(Chunk, 0, VerticesPerChunk, VertexSpacing,
 		Vertices); // this line for OutParam.
 
-	AdjustHeight(Chunk, InPath, Vertices);
 
 	GetUVs(Chunk, 0, VerticesPerChunk, UVScale,
 		UVs);
@@ -139,6 +139,7 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, const TArray<FVector>& 
 	GetTangents(VerticesPerChunk, BigTriangles, BigVertices,
 		Tangents, Normals);
 
+	AdjustHeight(Chunk, InPath, Vertices, CoverageRad); // change heights after getting normals.
 
 	// Datas into StreamSet( class Member Var ) RMC syntax
 	OutStreamSet.Empty();
@@ -186,29 +187,35 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 		return; 
 	}
 
-	float UVScale = VertexSpacing / TextureSize; // use same value with GetStreamSet.
-
 	TArray<FVector3f> Vertices, Tangents, Normals;
 	TArray<uint32> Triangles;
 	TArray<FVector2DHalf> UVs;
 
 	// x, y == local.
+	TArray<FVector> Path;
+	for (int32 i = 0; i < InPath.Num()-1; i++) // sample more points.
+	{
+		Path.Add(InPath[i]);
+		Path.Add((InPath[i] + InPath[i + 1]) / 2);
+		Path.Add(InPath[i + 1]);
+	}
 
 	TMultiMap<FIntPoint, int32> GridWithPath;
 	TSet<FIntPoint> GridNeeded;
-	for (int32 k = 0; k < InPath.Num(); k++) // init. find GridNeeded to be made, by checking GridWithPaths.
+	int32 Rad = this->CoverageRad;
+	for (int32 k = 0; k < Path.Num(); k++) // init. find GridNeeded to be made, by checking GridWithPaths.
 	{
-		FIntPoint GlobalGrid = GetGlobalGrid( InPath[k] );
+		FIntPoint GlobalGrid = GetGlobalGrid( Path[k] );
 
 		GridWithPath.Add(GlobalGrid, k);
 
-		for (int32 j = -2; j <= 2; j++)
+		for (int32 j = -Rad; j <= Rad; j++)
 		{
-			for (int32 i = -2; i <= 2; i++)
+			for (int32 i = -Rad; i <= Rad; i++)
 			{
 				FIntPoint Needed = FIntPoint(i,j) + GlobalGrid;
-				if( IsGridInChunk(Chunk, Needed) ) GridNeeded.Add(Needed);
-				// else, Save it to Global for usage.
+				if( IsGridInChunk(Chunk, Needed) )	GridNeeded.Add(Needed);
+				// else GridCoverNeeded.Add(GetChunk(Needed), Needed); // else, Save it to Global for usage.
 			}
 		}
 	} // init end.
@@ -224,9 +231,9 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 			else return false;
 		};
 
-
-	// GridNeeded.Sort(Sorter);
 	float DetailSpacing = VertexSpacing / DetailCount;
+	float UVScale = VertexSpacing / TextureSize;
+	UVScale /= DetailCount; // same size with original chunk.
 
 	TMap<FIntPoint, int32> DetailNeeded; // Global FIntPoint, Index for Verts.
 	for (auto& GlobalGrid : GridNeeded)
@@ -239,15 +246,14 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 			{
 				FIntPoint DetailGrid = FIntPoint(i, j);
 				FIntPoint Offset = GlobalGrid * DetailCount;
-				DetailNeeded.Add(DetailGrid + Offset); // global FIntPoint, but smaller vertexspacing.
+				DetailNeeded.Add(DetailGrid + Offset); // global FIntPoint, but smaller vertexspacing. (DetailSpacing)
 			}
 		}
 
 	}
-
-
 	DetailNeeded.KeySort(Sorter); // sort it to get right index.
 	int32 Index = 0;
+
 	for (auto& Elem : DetailNeeded)
 	{
 		Elem.Value = Index++; // give index to it.
@@ -257,12 +263,19 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 		FVector3f Vertex = FVector3f(LocalGrid.X, LocalGrid.Y, 0.f) * DetailSpacing;		// local space for vertex.
 		Vertex.Z = GetHeight( FVector2D(GlobalGrid.X, GlobalGrid.Y) * DetailSpacing );		// global space for height. 
 		
-		// find nearest roadpoint and set to it's height.
+
+		// --------------------Height Adjustment-------------------------- Start
+
+		// find all grid in radius that has path.
+		// get all indices in neighbor grids.
+		// find closest road point
+		// lerp
+
+
 		TArray<FIntPoint> NeighborWithPath;
-		int32 Rad = 2;
-		for (int32 j = -Rad; j <= Rad; j++)
+		for (int32 j = -Rad-1; j <= Rad+1; j++) // find all grid in radius that has path.
 		{
-			for (int32 i = -Rad; i <= Rad; i++)
+			for (int32 i = -Rad-1; i <= Rad+1; i++)
 			{
 				FIntPoint BigGlobalGrid;
 				BigGlobalGrid.X = FMath::FloorToInt32(GlobalGrid.X * DetailSpacing / VertexSpacing);
@@ -272,7 +285,7 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 			}
 		}
 
-		TArray<int32> AllIndices;	// get all indices in neighbor grids.
+		TArray<int32> AllIndices;				// get all indices in neighbor grids.
 		for (auto& Neighbor : NeighborWithPath) 
 		{
 			TArray<int32> Indices;
@@ -280,24 +293,26 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 			if (!Indices.IsEmpty()) AllIndices.Append(Indices);
 		}
 
-
-		float SumWeight = 0.f;
-		float SumHeight = 0.f;
-		float ClosestDist = INFLOAT;
-		for (auto& PathIndex : AllIndices)	 
+		float Closest = INFLOAT;
+		float Height = 0.f;
+		for (auto& PathIndex : AllIndices)	 // find closest road point
 		{
-			FVector Point = InPath[PathIndex];
+			FVector Point = Path[PathIndex];
 			FVector2D GlobalVec = FVector2D(GlobalGrid.X, GlobalGrid.Y) * DetailSpacing;
 			float Distance = FVector2D::Distance(FVector2D(Point.X, Point.Y), GlobalVec);
-			if (Distance <= ClosestDist) ClosestDist = Distance;
 
-			float Weight = 1.f / Distance + 0.001f;
-			SumWeight += Weight;
-			SumHeight += Weight * Point.Z;
+			if (Distance <= Closest) Closest = Distance, Height = Point.Z;
 		}
+		
+		float RoadHeightDist = 1500.f;	 // lerp
+		float OriginalHeightDist = 3000.f;
 
-		float Alpha = 1.0f - ClosestDist / 20000.f; // 20meter
-		Vertex.Z = FMath::Lerp(Vertex.Z, SumHeight / SumWeight, Alpha);
+		float Alpha = 1.0f - (Closest - RoadHeightDist) / (OriginalHeightDist - RoadHeightDist);
+		Alpha = FMath::Clamp(Alpha, 0.f, 1.f);
+		Vertex.Z = FMath::Lerp(Vertex.Z, Height-10.f, Alpha);
+
+
+		// --------------------Height Adjustment-------------------------- End
 		
 
 		Vertices.Add(Vertex);																// add it to vertices.
@@ -310,7 +325,40 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 		// if points are on the edge of chunk, maybe we should update global save. (for continuous chunk)
 	}
 
-	
+	// height smoothing
+	TArray<float> Heights;
+	int32 HRad = 2;
+	Heights.SetNum(Vertices.Num());
+	for (auto& Elem : DetailNeeded)
+	{
+		FIntPoint Grid = Elem.Key;
+		int32 IndexNow = Elem.Value;
+
+		TArray<int32> Indices;
+
+		for(int32 j = -HRad; j<= HRad; j++)
+			for (int32 i = -HRad; i <= HRad; i++)
+			{
+				FIntPoint Target = Grid + FIntPoint(i, j);
+				int32* FoundIndex = DetailNeeded.Find(Target);
+				if (FoundIndex) Indices.Add(*FoundIndex);
+			}
+
+		if (Indices.Num() < FMath::Square(HRad * 2 + 1))
+		{
+			Heights[IndexNow] = Vertices[IndexNow].Z;
+			continue;
+		}
+		
+		float Sum = 0.f;
+		for (auto& Temp : Indices) Sum += Vertices[Temp].Z;
+		Heights[IndexNow] = Sum / Indices.Num();
+	}
+
+
+	for (int32 i = 0; i < Heights.Num(); i++) Vertices[i].Z = Heights[i]; // put smoothed heights into vertices
+		
+
 	for (auto& Elem : DetailNeeded) // now we have index, let's make triangles.
 	{
 		FIntPoint GlobalGrid = Elem.Key;
@@ -438,7 +486,7 @@ void FChunkBuilder::GetVertices(const FIntPoint& Chunk, const int32 & StartIndex
 	return;
 }
 
-void FChunkBuilder::AdjustHeight(const FIntPoint& Chunk, const TArray<FVector>& InPath, TArray<FVector3f>& Vertices)
+void FChunkBuilder::AdjustHeight(const FIntPoint& Chunk, const TArray<FVector>& InPath, TArray<FVector3f>& Vertices, const int32& Rad)
 {
 	TSet<FIntPoint> GridSet;
 	TSet<FIntPoint> VertexSet;
@@ -446,27 +494,28 @@ void FChunkBuilder::AdjustHeight(const FIntPoint& Chunk, const TArray<FVector>& 
 	for (auto& Elem : InPath)
 	{
 		FIntPoint Pivot = GetGlobalGrid(Elem);
-		GridSet.Add(Pivot);
+		for (int32 j = -Rad; j <= Rad; j++)
+			for (int32 i = -Rad; i <= Rad; i++)
+				GridSet.Add(Pivot + FIntPoint(i, j));
 	}
 
-	for (auto& Elem : GridSet) // add 5x5 neighbors
+	for (auto& Elem : GridSet)
 	{
+		// for 4 points, we need to check if it is surrounded by Cells.
 
-		for (int32 j = -2; j <= 2; j++)
-		{
-			for (int32 i = -2; i <= 2; i++)
-			{
-				if (IsGridInChunk(Chunk, Elem))
-				{
-					FIntPoint Local = Elem - Chunk * (VerticesPerChunk - 1);
-					FIntPoint Pivot = Local + FIntPoint(i, j);
-					VertexSet.Add(Pivot);
-					VertexSet.Add(Pivot + FIntPoint(0, 1));
-					VertexSet.Add(Pivot + FIntPoint(1, 1));
-					VertexSet.Add(Pivot + FIntPoint(1, 0));
-				}
-			}
-		}
+		// 0 1 2
+		// 3 4 5
+		// 6 7 8
+		TArray<bool> Check;
+		for (int32 j = -1; j <= 1; j++)
+			for (int32 i = -1; i <= 1; i++)
+				Check.Add( GridSet.Contains( Elem + FIntPoint(i, j) ) );
+
+		FIntPoint Local = Elem - Chunk * (VerticesPerChunk - 1);
+		if (Check[3] && Check[0] && Check[1]) VertexSet.Add(Local);
+		if (Check[1] && Check[2] && Check[5]) VertexSet.Add(Local + FIntPoint(1, 0));
+		if (Check[5] && Check[8] && Check[7]) VertexSet.Add(Local + FIntPoint(1, 1));
+		if (Check[7] && Check[6] && Check[3]) VertexSet.Add(Local + FIntPoint(0, 1));
 	}
 
 	for (auto& Elem : VertexSet)
@@ -476,7 +525,6 @@ void FChunkBuilder::AdjustHeight(const FIntPoint& Chunk, const TArray<FVector>& 
 			int32 Index = Elem.X + Elem.Y * VerticesPerChunk;
 			Vertices[Index].Z -= 1000.f; // minus ten meters.
 		}
-		
 	}
 
 }

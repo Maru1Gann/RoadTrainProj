@@ -38,7 +38,7 @@ public:
 
     void GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
 	void GetStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
-	void GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, const int32& DetailCount = 10);
+	void GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, const int32& DetailCount = 5);
     float GetHeight( const FVector2D& Location );
 
 private:
@@ -48,11 +48,15 @@ private:
 	UPROPERTY( VisibleAnywhere, Category = "Chunks", meta = (DisplayPriority = 6) )
 	    float ChunkLength;
 
+	int32 CoverageRad;
+
+	TMultiMap<FIntPoint, FIntPoint> GridCoverNeeded;
+	TMultiMap<FIntPoint, FIntPoint> GridLowerNeeded;
 
 
     // tools below.
     void GetVertices( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices );
-	void AdjustHeight(const FIntPoint& Chunk, const TArray<FVector>& InPath, TArray<FVector3f>& OutVertices);
+	void AdjustHeight(const FIntPoint& Chunk, const TArray<FVector>& InPath, TArray<FVector3f>& Vertices, const int32& Rad = 3);
     void GetUVs( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs );
     void GetTriangles( const int32& VertexCount, TArray<uint32>& OutTriangles );
     void GetTangents(  const int32& VertexCount, const TArray<uint32>& BigTriangles, const TArray<FVector3f>& BigVertices, 
