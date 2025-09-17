@@ -84,6 +84,7 @@ void ALandscapeManager::Debug()
 
 	TArray<FGate> GatePath;
 	PathFinder->GetGatePath(Start, End, GatePath);
+
 	//UE_LOG(LogTemp, Warning, TEXT("GatePathNum %d"), GatePath.Num());
 	//for (auto& Gate : GatePath)
 	//{
@@ -123,6 +124,7 @@ void ALandscapeManager::Debug()
 		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
 		ChunkBuilder->GetPathStreamSet(Chunk, ActualPath, StreamSet);
 		AddChunk(Chunk, StreamSet);
+
 		ChunkBuilder->GetStreamSet(Chunk, ActualPath, StreamSet);
 		AddChunk(Chunk, StreamSet);
 
@@ -144,6 +146,11 @@ void ALandscapeManager::Debug()
 	
 
 
+}
+
+void ALandscapeManager::Debug2()
+{
+	UE_LOG(LogTemp, Warning, TEXT("Debug2"));
 }
 
 

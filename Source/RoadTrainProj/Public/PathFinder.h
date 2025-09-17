@@ -11,7 +11,7 @@ class FPathFinder
 
 public:
     FPathFinder(ALandscapeManager* pLM);
-    friend ALandscapeManager; // debug
+    // friend ALandscapeManager; // debug
 
     // HPA*
     bool GetGatePath(const FIntPoint& StartCell, const FIntPoint& EndCell, TArray<FGate>& OutGatePath);

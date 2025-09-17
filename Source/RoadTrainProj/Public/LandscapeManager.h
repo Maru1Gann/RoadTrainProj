@@ -74,6 +74,8 @@ public:
         void RemoveLandscape();
     UFUNCTION(CallInEditor, Category = "Terrain")
         void Debug();
+    UFUNCTION(CallInEditor, Category = "Terrain")
+        void Debug2();
 
     void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
     void RemoveChunk(const FIntPoint& Chunk);

@@ -312,15 +312,20 @@ void FPathFinder::GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, 
 					&& GetTanSqr(Chunk, Current, Neighbor) <= MaxSlopeTanSqr)
 				{
 					// out of boundary (gate) && Not a already found gate && slope traversable
-					// this fills outgates with gates that are found first.
+					// this fills outgates with gates that are found first. so if already found, no need to update.
 					// Total Cost + To Next Cost + Heuristic
 					float FCost = NodeNow.GCost + GetMoveCost(Chunk, Current, Neighbor) + GetMoveCost(Chunk, Neighbor, Goal);
 					Edges.Add(TPair<FIntPoint, float>(Neighbor, FCost));
 				}
 			}
 
-			for (auto& Edge : Edges)
+			for (auto& Edge : Edges) 
 			{
+				// do it only if direction of gate comes into this chunk. (for continuous chunk connection)
+				
+				FIntPoint GateDir = Current - Edge.Key; // this direction should come into the chunk.
+				if (!IsInBoundary(Current + GateDir * 3)) continue;
+
 				FGate GlobalGate = FGate(LocalToGlobal(Chunk, Current), LocalToGlobal(Chunk, Edge.Key));
 				FIntPoint NextChunk = GetChunk(GlobalGate.B);
 				float GCost = NodeNow.GCost + GetGlobalMoveCost(GlobalGate.A, GlobalGate.B);
@@ -330,24 +335,24 @@ void FPathFinder::GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, 
 			}
 		}
 
-			// ----------------if all gates are found----------------
-			//if (OutGates.Num() >= 8) {
+		// ----------------if all gates are found----------------
+		if (OutGates.Num() >= 8) {
 
-			//	if (DrawDebug)
-			//	{
-			//		for (auto& Elem : OutGates)
-			//		{
-			//			FIntPoint A = Elem.Value.Key.A;
-			//			FIntPoint B = Elem.Value.Key.B;
-			//			float Cost = Elem.Value.Value;
-			//			UE_LOG(LogTemp, Warning, TEXT("A %s B %s Cost %f"), *A.ToString(), *B.ToString(), Cost);
-			//			DrawDebugPoint(pLM->GetWorld(), pLM->GridToVector(A), 8.f, FColor::Red, true);
-			//			DrawDebugPoint(pLM->GetWorld(), pLM->GridToVector(B), 8.f, FColor::Red, true);
-			//		}
-			//	}
+			if (DrawDebug)
+			{
+				for (auto& Elem : OutGates)
+				{
+					FIntPoint A = Elem.Value.Key.A;
+					FIntPoint B = Elem.Value.Key.B;
+					float Cost = Elem.Value.Value;
+					UE_LOG(LogTemp, Warning, TEXT("A %s B %s Cost %f"), *A.ToString(), *B.ToString(), Cost);
+					DrawDebugPoint(pLM->GetWorld(), pLM->GridToVector(A), 8.f, FColor::Red, true);
+					DrawDebugPoint(pLM->GetWorld(), pLM->GridToVector(B), 8.f, FColor::Red, true);
+				}
+			}
 
-			//	return;
-			//}
+			return;
+		}
 
 
 			// ---------if didn't meet goal---------
@@ -686,12 +691,11 @@ void FPathFinder::SmoothPath(TArray<FIntPoint>& Path)
 
 // returns full path made from SmoothPath.
 // returns global FVector Path.
+// returns SGate AB ~ EGate AB.
 void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath)
 {
-	// make 'turn radius' turns. SmoothPath ensures 15m radius.
-	// plot every x meter point. for adequate spline and road mesh. x = vertexspacing should work fine.
-	// check heights.
-	// check lastgate - chunk start - chunk end - nextgate
+	// from StartGate B ~ EndGate B (if both gates)
+	// from StartGate B ~ EndGate A (if Endgoal)
 
 	if (SmoothPath.Num() < 2 )
 	{
@@ -703,17 +707,26 @@ void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVecto
 	OutPath.Empty();
 
 	FVector2D LastDirection;
-	if (SmoothPath[0] == SmoothPath[1])		LastDirection = (GridToCell(SmoothPath[2]) - GridToCell(SmoothPath[1])).GetSafeNormal(); // starting point
-	else									LastDirection = (GridToCell(SmoothPath[1]) - GridToCell(SmoothPath[0])).GetSafeNormal(); // gate
+	int32 StartIndex = 1;
+	if (SmoothPath[0] == SmoothPath[1])
+	{		
+		LastDirection = (GridToCell(SmoothPath[2]) - GridToCell(SmoothPath[1])).GetSafeNormal(); // starting point
+	}
+	else 
+	{
+		StartIndex = 0;
+		LastDirection = (GridToCell(SmoothPath[1]) - GridToCell(SmoothPath[0])).GetSafeNormal(); // gate
+	}									
 	
-	float TurnRadius = pLM->VertexSpacing * 1.5 ;		// should fix this later.
+	float TurnRadius = pLM->VertexSpacing * 1.5 ;		// should fix this later. (minimal turnradius)
 
 	int32 LastIndex = SmoothPath.Num() - 1;
-	int32 IndexEnd = LastIndex;							// do it to EndGate.A, EndGate.B
+	int32 IndexEnd = LastIndex;								// do it to EndGate.A, EndGate.B
 	if (SmoothPath[LastIndex - 1] == SmoothPath[LastIndex]) // if global end.
 	{ IndexEnd = LastIndex - 1; }							// do it to PathLast, EndGate.A
 
-	for (int32 i = 1; i <= IndexEnd - 1; i++) // make sure i+1 don't go out of index.
+
+	for (int32 i = StartIndex; i <= IndexEnd - 1; i++) // make sure i+1 don't go out of index.
 	{
 
 		FVector2D Current = GridToCell(SmoothPath[i]);

@@ -11,7 +11,7 @@ class ALandscapeManager;
 
 class FChunkBuilder
 {
-
+	friend ALandscapeManager; // debug
 
 public:
     FChunkBuilder( ALandscapeManager* pLM, UMaterialInterface* ChunkMaterial );
@@ -67,9 +67,13 @@ private:
 	int32 GetIndex(const int32& VertexCount, const FIntPoint& Pos);
 	int32 GetIndex(const FIntPoint& Pos);
 	FIntPoint GetChunk(const FIntPoint& GlobalGrid);
+	FIntPoint GetChunk(const FVector2D& GlobalVector);
 	FIntPoint GetGlobalGrid(const FVector& Vector);
 	
 	bool IsIndexInChunk(const int32& VertexCount, const FIntPoint& Index);
 	bool IsIndexInChunk(const FIntPoint& Index);
 	bool IsGridInChunk(const FIntPoint& Chunk, const FIntPoint& GlobalGrid);
+
+	void GetPossibleChunks(const FIntPoint& GlobalSmallGrid, const int32& DetailCount, TSet<FIntPoint>& OutChunks);
+
 };
