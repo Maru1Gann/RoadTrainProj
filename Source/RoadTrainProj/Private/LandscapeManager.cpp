@@ -105,7 +105,7 @@ void ALandscapeManager::Debug()
 	//	);
 	//}
 
-	for (int32 i = 0; i < GatePath.Num()-1; i++)
+	for (int32 i = 0; i < GatePath.Num()-1; i++) // always make chunk with roads first.
 	{
 		FIntPoint Chunk = GetChunk(GatePath[i].B);
 		TArray<FIntPoint> Path;
