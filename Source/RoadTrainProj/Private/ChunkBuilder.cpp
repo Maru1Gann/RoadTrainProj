@@ -558,7 +558,6 @@ void FChunkBuilder::AdjustHeight(const FIntPoint& Chunk, const TArray<FVector>& 
 	VertexLowerNeeded.MultiFind(Chunk, SavedVertices);
 	for (auto& Vert : SavedVertices) VertexSet.Add(Vert);
 
-
 	// filter vertices on edge of coverage.
 	TSet<FIntPoint> ToRemove;
 	for (auto& Elem : VertexSet)
@@ -572,7 +571,8 @@ void FChunkBuilder::AdjustHeight(const FIntPoint& Chunk, const TArray<FVector>& 
 			ToRemove.Add(Elem);
 		}
 	}
-	for (auto& Remover : ToRemove) VertexSet.Remove(Remover); // filter.
+	// filter.
+	for (auto& Remover : ToRemove) VertexSet.Remove(Remover); 
 
 
 	for (auto& Elem : VertexSet)
@@ -588,7 +588,8 @@ void FChunkBuilder::AdjustHeight(const FIntPoint& Chunk, const TArray<FVector>& 
 			TSet<FIntPoint> OtherChunks;
 			GetPossibleChunks(Global, 1, OtherChunks); // detailcount = 1. it is just global grid.
 			
-			OtherChunks.Remove(Chunk); // remove self.
+			// add to global save. (except self)
+			OtherChunks.Remove(Chunk); 
 			for (auto& OtherChunk : OtherChunks)
 			{
 				FIntPoint Local = Global - OtherChunk * (VerticesPerChunk - 1);
