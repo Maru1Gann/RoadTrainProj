@@ -106,7 +106,7 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtime
 
 // DetailCount == how many squares will fit in one grid. (row)
 // do this only if there's one path.
-void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath1, const TArray<FVector>& InPath2, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, const int32& DetailCount, TSet<FIntPoint>* DoNotViolate)
+void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath1, const TArray<FVector>& InPath2, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, const TSet<FIntPoint>& DoNotViolate, const int32& DetailCount)
 {
 	if (int32(VertexSpacing / 100) % DetailCount != 0) // does not fit. (meter)
 	{
@@ -269,13 +269,11 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 		// figure out if it's okay to make this vertex.
 		TSet<FIntPoint> PossibleChunks;
 		GetPossibleChunks(SGlobalGrid, DetailCount, PossibleChunks);
-		bool IsOkay = false;
+		bool IsOkay = true;
 
-
-		IsOkay = true;
 		for (auto& OtherChunk : PossibleChunks)
 		{
-			if ((*DoNotViolate).Contains(OtherChunk))
+			if (DoNotViolate.Contains(OtherChunk))
 			{
 				IsOkay = false;
 				break;

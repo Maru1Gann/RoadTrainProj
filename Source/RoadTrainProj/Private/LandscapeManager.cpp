@@ -105,19 +105,46 @@ void ALandscapeManager::Debug()
 	//	);
 	//}
 
-	for (int32 i = 0; i < GatePath.Num()-1; i++) // always make chunk with roads first.
+	TSet<FIntPoint> ChunkWithPath;
+	for (auto& Elem : GatePath) ChunkWithPath.Add(Elem.A);
+
+	if (GatePath.Num() <= 2)
 	{
-		FIntPoint Chunk = GetChunk(GatePath[i].B);
-		TArray<FVector> ActualPath;
-		PathFinder->GetActualPath(GatePath[i], GatePath[i + 1], ActualPath);
+		FIntPoint Chunk = GetChunk(GatePath[0].B);
+		TArray<FVector> Path;
+		PathFinder->GetActualPath(GatePath[0], GatePath[1], Path);
 
 		RealtimeMesh::FRealtimeMeshStreamSet PathStreamSet;
-		ChunkBuilder->GetPathStreamSet(Chunk, ActualPath, PathStreamSet);
+		TArray<FVector> TempPath;
+		TempPath.Empty();
+		ChunkBuilder->GetPathStreamSet(Chunk, Path, TempPath, PathStreamSet, ChunkWithPath);
 		AddChunk(Chunk, PathStreamSet);
 
 		USplineComponent* Spline = nullptr;
-		Spline = AddPathSpline(Chunk, ActualPath);
+		Spline = AddPathSpline(Chunk, Path);
 		if (Spline) MakeRoad(Spline);
+	}
+	else
+	{
+		
+
+		for (int32 i = 0; i < GatePath.Num() - 2; i++) // always make chunk with roads first.
+		{
+			FIntPoint Chunk = GetChunk(GatePath[i].B);
+			TArray<FVector> Path1, Path2;
+			PathFinder->GetActualPath(GatePath[i], GatePath[i + 1], Path1);
+			PathFinder->GetActualPath(GatePath[i + 1], GatePath[i + 2], Path2);
+
+			RealtimeMesh::FRealtimeMeshStreamSet PathStreamSet;
+			ChunkBuilder->GetPathStreamSet(Chunk, Path1, Path2, PathStreamSet, ChunkWithPath);
+			AddChunk(Chunk, PathStreamSet);
+
+			USplineComponent* Spline = nullptr;
+			Spline = AddPathSpline(Chunk, Path1);
+			if (Spline) MakeRoad(Spline);
+		}
+
+
 	}
 
 	for (auto& Elem : ChunkOrder)
