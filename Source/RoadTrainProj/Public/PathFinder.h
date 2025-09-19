@@ -21,6 +21,9 @@ public:
     // Path Smoother
     void SmoothPath( TArray<FIntPoint>& Path );
     void RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath);
+
+    // macro
+    void GetActualPath(const FGate& StartGate, const FGate& EndGate, TArray<FVector>& OutPath);
     
 private:
 

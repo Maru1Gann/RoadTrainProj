@@ -108,25 +108,12 @@ void ALandscapeManager::Debug()
 	for (int32 i = 0; i < GatePath.Num()-1; i++) // always make chunk with roads first.
 	{
 		FIntPoint Chunk = GetChunk(GatePath[i].B);
-		TArray<FIntPoint> Path;
-
-		PathFinder->GetPath(GatePath[i], GatePath[i + 1], Path);
-		//for (auto& Point : Path)
-		//{ DrawDebugPoint(GetWorld(), GridToVector(Point), 3.f, FColor::Cyan, true); }
-
-		PathFinder->SmoothPath(Path);
-		for (auto& Point : Path)
-		{ DrawDebugPoint(GetWorld(), GridToVector(Point), 10.f, FColor::Orange, true); }
-
 		TArray<FVector> ActualPath;
-		PathFinder->RebuildPath(Path, ActualPath);
+		PathFinder->GetActualPath(GatePath[i], GatePath[i + 1], ActualPath);
 
-		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-		ChunkBuilder->GetPathStreamSet(Chunk, ActualPath, StreamSet);
-		AddChunk(Chunk, StreamSet);
-
-		ChunkBuilder->GetStreamSet(Chunk, ActualPath, StreamSet);
-		AddChunk(Chunk, StreamSet);
+		RealtimeMesh::FRealtimeMeshStreamSet PathStreamSet;
+		ChunkBuilder->GetPathStreamSet(Chunk, ActualPath, PathStreamSet);
+		AddChunk(Chunk, PathStreamSet);
 
 		USplineComponent* Spline = nullptr;
 		Spline = AddPathSpline(Chunk, ActualPath);
@@ -136,12 +123,8 @@ void ALandscapeManager::Debug()
 	for (auto& Elem : ChunkOrder)
 	{
 		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-
-		if (!Chunks.Contains(Elem))
-		{
-			ChunkBuilder->GetStreamSet(Elem, StreamSet);
-			AddChunk(Elem, StreamSet);
-		}
+		ChunkBuilder->GetStreamSet(Elem, StreamSet);
+		AddChunk(Elem, StreamSet);
 	}
 	
 

@@ -37,8 +37,8 @@ public:
     
 
     void GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
-	void GetStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
-	void GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, const int32& DetailCount = 5);
+	void GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath1, const TArray<FVector>& InPath2,
+		RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, const int32& DetailCount = 5,  TSet<FIntPoint>* DoNotViolate = nullptr );
     float GetHeight( const FVector2D& Location );
 
 private:
@@ -50,14 +50,15 @@ private:
 
 	int32 CoverageRad;
 
-	TMultiMap<FIntPoint, TPair<FIntPoint, float>> GridCoverNeeded;	// Chunk, SmallGlobalGrid, height
-	TMultiMap<FIntPoint, FIntPoint> VertexLowerNeeded;	// Chunk, GlobalGrid
+	TMap< FIntPoint, TSet<FIntPoint> > VertexLowerNeeded;		// Chunk, GlobalFIntPoint.
 
 
     // tools below.
     void GetVertices( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices );
-	void AdjustHeight(const FIntPoint& Chunk, const TArray<FVector>& InPath, TArray<FVector3f>& Vertices, const int32& Rad = 3);
-	void AdjustHeight(const FIntPoint& Chunk, TArray<FVector3f>& Vertices);
+
+	void UpdateVertexLowerNeeded(const FIntPoint& Chunk, const TArray<FVector>& InPath, const int32& Rad = 3);
+	void ApplyVertexLowerNeeded(const FIntPoint& Chunk, TArray<FVector3f>& Vertices);
+
     void GetUVs( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs );
     void GetTriangles( const int32& VertexCount, TArray<uint32>& OutTriangles );
     void GetTangents(  const int32& VertexCount, const TArray<uint32>& BigTriangles, const TArray<FVector3f>& BigVertices, 
@@ -75,6 +76,7 @@ private:
 	bool IsIndexInChunk(const FIntPoint& Index);
 	bool IsGridInChunk(const FIntPoint& Chunk, const FIntPoint& GlobalGrid);
 
+	bool IsGridInChunk(const FIntPoint& Chunk, const FIntPoint& GlobalSmallGrid, const int32& DetailCount);
 	void GetPossibleChunks(const FIntPoint& GlobalSmallGrid, const int32& DetailCount, TSet<FIntPoint>& OutChunks);
 	bool IsOnBoundary(const FIntPoint& GlobalSmallGrid, const int32& DetailCount);
 

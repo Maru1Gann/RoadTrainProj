@@ -785,6 +785,19 @@ void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVecto
 	
 }
 
+// Macro.
+void FPathFinder::GetActualPath(const FGate& StartGate, const FGate& EndGate, TArray<FVector>& OutPath)
+{
+
+	TArray<FIntPoint> Path;
+	GetPath(StartGate, EndGate, Path);
+	SmoothPath(Path);
+
+	OutPath.Empty();
+	RebuildPath(Path, OutPath);
+	return;
+}
+
 
 
 
