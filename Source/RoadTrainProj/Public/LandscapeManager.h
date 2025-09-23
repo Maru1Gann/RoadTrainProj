@@ -71,24 +71,30 @@ public:
     UFUNCTION(CallInEditor, Category = "Terrain")
         void GenerateLandscape();
     UFUNCTION(CallInEditor, Category = "Terrain")
+        void GenerateLandscapeWithPath();
+    UFUNCTION(CallInEditor, Category = "Terrain")
         void RemoveLandscape();
-    UFUNCTION(CallInEditor, Category = "Terrain")
-        void Debug();
-    UFUNCTION(CallInEditor, Category = "Terrain")
-        void Debug2();
 
-    void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
+    void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet, bool IsPathChunk = false);
     void RemoveChunk(const FIntPoint& Chunk);
 
     // tools
     float GetHeight(const FVector2D& Location);
     FVector GridToVector(const FIntPoint& GlobalGrid);
     FIntPoint GetChunk(const FIntPoint& GlobalGrid);
+    FIntPoint GetChunk(const FVector& Vector);
 
 private:
 
+    bool IsPath;
+    FIntPoint LastLocation;
+    TArray<FGate> GatePath;
+    TMap<FIntPoint, TPair<FGate, FGate>> ChunkGates;
+
     std::unique_ptr<FChunkBuilder> ChunkBuilder;
-    TMultiMap<FIntPoint, ARealtimeMeshActor*> Chunks;
+
+    TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
+    TMap<FIntPoint, ARealtimeMeshActor*> PathChunks;
     TMap<FIntPoint, USplineComponent*> Splines;
     float ChunkLength;
 
@@ -102,6 +108,8 @@ private:
     USplineComponent* AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path);
     void MakeRoad(USplineComponent* Spline);
 
-    
+    void GenerateChunks(const FVector& PlayerLoc);
+    void RemoveChunks(const FVector& PlayerLoc);
+    FVector GetPlayerLocation();
 
 };
