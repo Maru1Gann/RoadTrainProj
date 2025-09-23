@@ -69,82 +69,51 @@ void ALandscapeManager::Debug()
 
 	FIntPoint TargetChunk = GetChunk(Start);
 
-	//DrawDebugPoint( GetWorld(), GridToVector(Start), 15.f, FColor::Cyan, true );
-	//DrawDebugPoint( GetWorld(), GridToVector(End), 15.f, FColor::Cyan, true );
-
-	//for (auto& Elem : Gates)
-	//{
-	//	FIntPoint ToChunk = Elem.Key;
-	//	FGate Gate = Elem.Value.Key;
-	//	float GCost = Elem.Value.Value;
-	//	UE_LOG(LogTemp, Warning, TEXT("To %s, Cost %f"), *ToChunk.ToString(), GCost);
-	//	DrawDebugPoint(GetWorld(), GridToVector(Gate.A), 8.f, FColor::Red, true);
-	//	DrawDebugPoint(GetWorld(), GridToVector(Gate.B), 8.f, FColor::Red, true);
-	//}
-
 	TArray<FGate> GatePath;
-	PathFinder->GetGatePath(Start, End, GatePath);
+	bool IsPath = PathFinder->GetGatePath(Start, End, GatePath);
+	if (!IsPath) return;
 
-	//UE_LOG(LogTemp, Warning, TEXT("GatePathNum %d"), GatePath.Num());
-	//for (auto& Gate : GatePath)
-	//{
-	//	 UE_LOG(LogTemp, Warning, TEXT("Gate from to %s %s"), *GetChunk( Gate.A ).ToString(), *GetChunk( Gate.B ).ToString());
-	//	DrawDebugPoint(
-	//		GetWorld(),
-	//		GridToVector(Gate.A),
-	//		15.f,
-	//		FColor::Red,
-	//		true
-	//	);
-	//	DrawDebugPoint(
-	//		GetWorld(),
-	//		GridToVector(Gate.B),
-	//		15.f,
-	//		FColor::Red,
-	//		true
-	//	);
-	//}
-
-	TSet<FIntPoint> ChunkWithPath;
-	for (auto& Elem : GatePath) ChunkWithPath.Add(Elem.A);
-
-	if (GatePath.Num() <= 2)
+	TMap<FIntPoint, TPair<FGate, FGate>> PathInChunk;
+	for (int32 i = 0; i<GatePath.Num()-1; i++)
 	{
-		FIntPoint Chunk = GetChunk(GatePath[0].B);
-		TArray<FVector> Path;
-		PathFinder->GetActualPath(GatePath[0], GatePath[1], Path);
-
-		RealtimeMesh::FRealtimeMeshStreamSet PathStreamSet;
-		TArray<FVector> TempPath;
-		TempPath.Empty();
-		ChunkBuilder->GetPathStreamSet(Chunk, Path, TempPath, PathStreamSet, ChunkWithPath);
-		AddChunk(Chunk, PathStreamSet);
-
-		USplineComponent* Spline = nullptr;
-		Spline = AddPathSpline(Chunk, Path);
-		if (Spline) MakeRoad(Spline);
+		FGate GateA = GatePath[i];
+		FGate GateB = GatePath[i + 1];
+		FIntPoint Chunk = GetChunk(GateA.B);
+		PathInChunk.Add(Chunk, TPair<FGate,FGate>(GateA, GateB));
 	}
-	else
+
+	TArray<FIntPoint> PriorityChunks;
+	for (auto& Elem : ChunkOrder)
 	{
-		
+		if (PathInChunk.Contains(Elem))
+			PriorityChunks.Add(Elem);
+	}
 
-		for (int32 i = 0; i < GatePath.Num() - 2; i++) // always make chunk with roads first.
-		{
-			FIntPoint Chunk = GetChunk(GatePath[i].B);
-			TArray<FVector> Path1, Path2;
-			PathFinder->GetActualPath(GatePath[i], GatePath[i + 1], Path1);
-			PathFinder->GetActualPath(GatePath[i + 1], GatePath[i + 2], Path2);
+	for (auto& Elem : PriorityChunks)
+	{
+		TArray<FVector> Path;
+		TArray<FVector> PathForSpline;
+		for(int32 j = -1; j<=1; j++)
+			for (int32 i = -1; i <= 1; i++)
+			{
+				FIntPoint Target = Elem + FIntPoint(i, j);
+				TPair<FGate, FGate>* FoundGates = PathInChunk.Find(Target);
+				if (FoundGates)
+				{
+					TArray<FVector> TempPath;
+					PathFinder->GetActualPath((*FoundGates).Key, (*FoundGates).Value, TempPath);
+					Path.Append(TempPath);
+					if (i == 0 && j == 0) PathForSpline = TempPath;
+				}
+			}
 
-			RealtimeMesh::FRealtimeMeshStreamSet PathStreamSet;
-			ChunkBuilder->GetPathStreamSet(Chunk, Path1, Path2, PathStreamSet, ChunkWithPath);
-			AddChunk(Chunk, PathStreamSet);
+		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+		ChunkBuilder->GetPathStreamSet(Elem, Path, StreamSet);
+		AddChunk(Elem, StreamSet);
 
-			USplineComponent* Spline = nullptr;
-			Spline = AddPathSpline(Chunk, Path1);
-			if (Spline) MakeRoad(Spline);
-		}
-
-
+		USplineComponent* Spline;
+		Spline = AddPathSpline(Elem, PathForSpline);
+		MakeRoad(Spline);
 	}
 
 	for (auto& Elem : ChunkOrder)
@@ -153,8 +122,6 @@ void ALandscapeManager::Debug()
 		ChunkBuilder->GetStreamSet(Elem, StreamSet);
 		AddChunk(Elem, StreamSet);
 	}
-	
-
 
 }
 
