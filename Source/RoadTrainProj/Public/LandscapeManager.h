@@ -86,10 +86,18 @@ public:
 
 private:
 
+    // ก้ use it only on game thread
     bool IsPath;
     FIntPoint LastLocation;
     TArray<FGate> GatePath;
     TMap<FIntPoint, TPair<FGate, FGate>> ChunkGates;
+    // ก่ game thread only
+
+
+    // ก้ background thread produces.
+    TQueue< TPair<FIntPoint, RealtimeMesh::FRealtimeMeshStreamSet> >    ChunkQueue;
+    TQueue<FIntPoint>                                                   ChunkRemovalQueue;
+    // ก่ background thread produces.
 
     std::unique_ptr<FChunkBuilder> ChunkBuilder;
 
