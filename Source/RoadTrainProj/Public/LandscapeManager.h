@@ -44,7 +44,10 @@ public:
 	    int32 ChunkRadius = 2;
 	UPROPERTY( EditAnywhere, Category = "Terrain", meta = (DisplayPriority = 4, ClampMin = "0.0", Step = "10.0") )
 	    float TextureSize = 300.0f;
-    
+    UPROPERTY(EditAnywhere, Category = "Terrain|Coverage", meta = (DisplayPriority = 1, ClampMin = "0", Step = "1"))
+        int32 CoverageRadius;   // cover radius of detailed layer.
+    UPROPERTY( EditAnywhere, Category = "Terrain|Coverage", meta = (DisplayPriority = 2, ClampMin = "0", Step = "1"))
+        int32 DetailCount;  // num of mesh squares in one side of detail layer. should divide VertexSpacing right.
     UPROPERTY( EditAnywhere, Category = "Terrain|Height", meta = (DisplayPriority = 1) )
 	    bool ShouldGenerateHeight = true;
     UPROPERTY( EditAnywhere, Category = "Terrain|Height", meta = (DisplayPriority = 2) )
@@ -87,8 +90,8 @@ public:
         void Debug();
 
 
-    void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet, bool IsPathChunk = false);
-    bool RemoveChunk(const FIntPoint& Chunk);
+    void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
+    bool DestroyChunk(const FIntPoint& Chunk);
 
     // tools
     float GetHeight(const FVector2D& Location);
@@ -99,12 +102,15 @@ public:
 private:
 
     // ก้ use it only on game thread
+
     bool IsPath;
     FIntPoint LastLocation;
     bool LastLocChanged;
     int32 FrameCounter;
+
     TArray<FGate> GatePath;
-    TMap<FIntPoint, TPair<FGate, FGate>> ChunkGates;
+    TMap<FIntPoint, TPair<FGate, FGate>> GateMap;
+
     // ก่ game thread only
 
 
@@ -117,13 +123,13 @@ private:
     std::unique_ptr<FChunkBuilder> ChunkBuilder;
 
     TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
-    TMap<FIntPoint, ARealtimeMeshActor*> PathChunks;
     TMap<FIntPoint, USplineComponent*> Splines;
     float ChunkLength;
 
     std::unique_ptr<FPathFinder> PathFinder;
 
     TArray<FIntPoint> ChunkOrder;
+    TArray<FIntPoint> BigChunkOrder;
 
     // tools
     void GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& OutArray);
@@ -131,24 +137,27 @@ private:
     USplineComponent* AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path);
     void MakeRoad(USplineComponent* Spline);
 
-    void GenerateChunks(const FVector& PlayerLoc);
-    void RemoveChunks(const FVector& PlayerLoc);
     FVector GetPlayerLocation();
+    void UpdateGateMap();
+
+   
+    // async related below
+
+    void ProcessQueue();
 
     void AsyncWork();
-    void FindChunksToMake(const FIntPoint& ChunkNow, TArray<FIntPoint>& RoadChunksNeeded, TArray<FIntPoint>& ChunksNeeded);
-    void FindChunksToRemove(const FIntPoint& ChunkNow, TSet<FIntPoint>& ChunksToRemove);
-    void FindChunkGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap);
 
-    bool LastWork = true;
-    void ProcessQueues();
-    bool ProcessRemovalQueue();
-    bool ProcessChunkQueue();
+    void UpdateDataQueue(const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap);
+    FChunkData MakeChunkData(const FIntPoint TargetChunk, const TArray< TPair<FGate, FGate> > NearGates);
+
+    // game thread
+    void FindNearGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap);
+    void FindChunksToRemove(const FIntPoint& ChunkNow, TSet<FIntPoint>& ChunksToRemove);
+    void FindChunksToMake(const FIntPoint& ChunkNow, TArray<FIntPoint>& ChunksNeeded);
+    // game thread
+
     bool ShouldDoWork();
 
-    void UpdateDataQueue(const TArray<FIntPoint> RoadChunksNeeded, const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap);
-    FChunkData MakePathChunkData(const FIntPoint TargetChunk, const TMap<FIntPoint, TPair<FGate, FGate>> NearPaths);
-    FChunkData MakeChunkData(const FIntPoint TargetChunk);
 };
 
 

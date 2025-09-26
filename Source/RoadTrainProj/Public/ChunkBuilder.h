@@ -36,8 +36,11 @@ public:
 	    UMaterialInterface* ChunkMaterial;
     
 
-    void GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, int32 DetailCount = 5);
-	void GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, const TSet<FIntPoint> NoBuildChunks, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, const int32& DetailCount = 5);
+	void GetStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
+
+	//void GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
+	//void GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, const TSet<FIntPoint> NoBuildChunks, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
+
     float GetHeight( const FVector2D& Location );
 
 private:
@@ -48,18 +51,20 @@ private:
 	    float ChunkLength;
 
 	int32 CoverageRad;
-
-	FCriticalSection VertexLowerMutex, CoverVertMutex;
-	TMap< FIntPoint, TSet<FIntPoint> > VertexLowerNeeded;		// Chunk, GlobalFIntPoint.
-	TMap< FIntPoint, TMap<FIntPoint, float>> CoverVertices;		// Chunk, TMap<SGlobalGrid, Height>.
+	int32 DetailCount;
 
 
     // tools below.
+	void GetStreamSetComponents(const FIntPoint& Chunk, 
+		TArray<FVector3f>& Vertices, TArray<FVector3f>& Tangents, TArray<FVector3f>& Normals, TArray<uint32>& Triangles, TArray<FVector2DHalf>& UVs);
+	void GetPathStreamSetComponents(const FIntPoint& Chunk, const TArray<FVector>& InPath,
+		TArray<FVector3f>& Vertices, TArray<FVector3f>& Tangents, TArray<FVector3f>& Normals, TArray<uint32>& Triangles, TArray<FVector2DHalf>& UVs);
+	void BuildStreamSet(TArray<FVector3f>& Vertices, TArray<FVector3f>& Tangents, TArray<FVector3f>& Normals, TArray<uint32>& Triangles, TArray<FVector2DHalf>& UVs, 
+		RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet);
+
+	void LowerVerticesNearPath(const FIntPoint& Chunk, const TArray<FVector>& InPath, TArray<FVector3f>& Vertices);
+
     void GetVertices( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const int32& VertexSpace, TArray<FVector3f>& OutVertices );
-
-	void UpdateVertexLowerNeeded(const FIntPoint& Chunk, const TArray<FVector>& InPath, const int32& Rad = 3);
-	void ApplyVertexLowerNeeded(const FIntPoint& Chunk, TArray<FVector3f>& Vertices);
-
     void GetUVs( const FIntPoint& Chunk, const int32& StartIndex, const int32& EndIndex, const float& UVscale, TArray<FVector2DHalf>& OutUVs );
     void GetTriangles( const int32& VertexCount, TArray<uint32>& OutTriangles );
     void GetTangents(  const int32& VertexCount, const TArray<uint32>& BigTriangles, const TArray<FVector3f>& BigVertices, 

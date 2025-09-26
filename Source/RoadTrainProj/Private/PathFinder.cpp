@@ -544,7 +544,7 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 			{
 				OutPath[i] = LocalToGlobal( Chunk, ReversePath[ReversePath.Num() - 1 - i] );
 			}
-			UE_LOG(LogTemp, Warning, TEXT("WhileCount, %d"), Counter);
+			//UE_LOG(LogTemp, Warning, TEXT("GetPath WhileCount, %d"), Counter);
 			return true;
 		}
 		
