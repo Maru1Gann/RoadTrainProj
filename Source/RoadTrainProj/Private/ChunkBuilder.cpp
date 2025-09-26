@@ -67,113 +67,118 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtime
 	// Read Function Name. do it after normal calculation.
 	ApplyVertexLowerNeeded(Chunk, Vertices);
 
-	// Now add vertex coverage from global save.
-	TMap<FIntPoint, float>* FoundMap = CoverVertices.Find(Chunk);
-	int32 BaseIndex = Vertices.Num();
-	if (FoundMap)
-	{
-		int32 Index = 0;
-		float DetailSpacing = VertexSpacing / DetailCount;
-		UVScale /= DetailCount;
-		TArray<FVector3f> Vertices2, Tangents2, Normals2;
-		TArray<uint32> Triangles2;
-		TArray<FVector2DHalf> UVs2;
-
-		TMap<FIntPoint, TPair<int32, float>> DetailNeeded;
-
-		for (auto& Elem : *FoundMap)
-		{
-			FIntPoint SmallGrid = Elem.Key;
-			float Height = Elem.Value;
-
-			DetailNeeded.Add(SmallGrid, TPair<int32, float>(-1, Height));
-		}
-
-		// sort by (X,Y) small to big
-		auto Sorter = [](const FIntPoint& A, const FIntPoint& B)
-			{
-				if (A.Y < B.Y) return true;
-				else if (A.Y == B.Y)
-				{
-					return A.X < B.X;
-				}
-				else return false;
-			};
-
-		DetailNeeded.KeySort(Sorter);
-
-		for (auto& Elem : DetailNeeded)
-		{
-			FIntPoint SmallGrid = Elem.Key;
-			int32& IndexNow = Elem.Value.Key;
-			float& Height = Elem.Value.Value;
-
-			IndexNow = Index++;
-			FIntPoint LocalGrid = SmallGrid - Chunk * (VerticesPerChunk - 1) * DetailCount;
-			FVector3f Vertex = FVector3f(LocalGrid.X, LocalGrid.Y, 0.f) * DetailSpacing;
-			Vertex.Z = Height;
-			
-			Vertices2.Add(Vertex);
-			FVector2DHalf UV;
-			UV.X = SmallGrid.X * UVScale;
-			UV.Y = SmallGrid.Y * UVScale;
-			UVs2.Add(UV);
-		}
-
-		for (auto& Elem : DetailNeeded)
-		{
-			FIntPoint SmallGrid = Elem.Key;
-			int32 IndexNow = Elem.Value.Key;
-
-			TPair<int32, float>* Find1, * Find2, * Find3;
-			Find1 = DetailNeeded.Find(SmallGrid + FIntPoint(1, 0));
-			Find2 = DetailNeeded.Find(SmallGrid + FIntPoint(0, 1));
-			Find3 = DetailNeeded.Find(SmallGrid + FIntPoint(1, 1));
-			// 0 1
-			// 2 3
-			int32 Index1, Index2, Index3;
-			if (Find1 && Find2 && Find3)
-			{
-				Index1 = (*Find1).Key;
-				Index2 = (*Find2).Key;
-				Index3 = (*Find3).Key;
-
-				Triangles2.Add(IndexNow);
-				Triangles2.Add(Index2);
-				Triangles2.Add(Index1);
-
-				Triangles2.Add(Index2);
-				Triangles2.Add(Index3);
-				Triangles2.Add(Index1);
-			}
-		}
-
-		Normals2.SetNum(Vertices2.Num());
-		Tangents2.SetNum(Vertices2.Num());
-
-		RealtimeMeshAlgo::GenerateTangents(
-			TConstArrayView<uint32>(Triangles2),
-			Vertices2,
-			nullptr,
-			[&Normals2, &Tangents2](int32 index, FVector3f Tangent, FVector3f Normal) -> void
-			{
-				Normals2[index] = Normal;
-				Tangents2[index] = Tangent;
-			},
-			true
-		);
-
-		Vertices.Append(Vertices2);
-		for (auto& Elem : Triangles2) Triangles.Add(Elem + BaseIndex);
-		Normals.Append(Normals2);
-		Tangents.Append(Tangents2);
-		UVs.Append(UVs2);
-		
-
-		CoverVertices.Remove(Chunk);
-	}
 	
+	// Now add vertex coverage from global save.
+	// accessing CoverVertices (mutex)
+	{
+		FScopeLock Lock(&this->CoverVertMutex);
+		TMap<FIntPoint, float>* FoundMap = CoverVertices.Find(Chunk);
 
+		int32 BaseIndex = Vertices.Num();
+		if (FoundMap)
+		{
+			int32 Index = 0;
+			float DetailSpacing = VertexSpacing / DetailCount;
+			UVScale /= DetailCount;
+			TArray<FVector3f> Vertices2, Tangents2, Normals2;
+			TArray<uint32> Triangles2;
+			TArray<FVector2DHalf> UVs2;
+
+			TMap<FIntPoint, TPair<int32, float>> DetailNeeded;
+
+			for (auto& Elem : *FoundMap)
+			{
+				FIntPoint SmallGrid = Elem.Key;
+				float Height = Elem.Value;
+
+				DetailNeeded.Add(SmallGrid, TPair<int32, float>(-1, Height));
+			}
+
+			// sort by (X,Y) small to big
+			auto Sorter = [](const FIntPoint& A, const FIntPoint& B)
+				{
+					if (A.Y < B.Y) return true;
+					else if (A.Y == B.Y)
+					{
+						return A.X < B.X;
+					}
+					else return false;
+				};
+
+			DetailNeeded.KeySort(Sorter);
+
+			for (auto& Elem : DetailNeeded)
+			{
+				FIntPoint SmallGrid = Elem.Key;
+				int32& IndexNow = Elem.Value.Key;
+				float& Height = Elem.Value.Value;
+
+				IndexNow = Index++;
+				FIntPoint LocalGrid = SmallGrid - Chunk * (VerticesPerChunk - 1) * DetailCount;
+				FVector3f Vertex = FVector3f(LocalGrid.X, LocalGrid.Y, 0.f) * DetailSpacing;
+				Vertex.Z = Height;
+
+				Vertices2.Add(Vertex);
+				FVector2DHalf UV;
+				UV.X = SmallGrid.X * UVScale;
+				UV.Y = SmallGrid.Y * UVScale;
+				UVs2.Add(UV);
+			}
+
+			for (auto& Elem : DetailNeeded)
+			{
+				FIntPoint SmallGrid = Elem.Key;
+				int32 IndexNow = Elem.Value.Key;
+
+				TPair<int32, float>* Find1, * Find2, * Find3;
+				Find1 = DetailNeeded.Find(SmallGrid + FIntPoint(1, 0));
+				Find2 = DetailNeeded.Find(SmallGrid + FIntPoint(0, 1));
+				Find3 = DetailNeeded.Find(SmallGrid + FIntPoint(1, 1));
+				// 0 1
+				// 2 3
+				int32 Index1, Index2, Index3;
+				if (Find1 && Find2 && Find3)
+				{
+					Index1 = (*Find1).Key;
+					Index2 = (*Find2).Key;
+					Index3 = (*Find3).Key;
+
+					Triangles2.Add(IndexNow);
+					Triangles2.Add(Index2);
+					Triangles2.Add(Index1);
+
+					Triangles2.Add(Index2);
+					Triangles2.Add(Index3);
+					Triangles2.Add(Index1);
+				}
+			}
+
+			Normals2.SetNum(Vertices2.Num());
+			Tangents2.SetNum(Vertices2.Num());
+
+			RealtimeMeshAlgo::GenerateTangents(
+				TConstArrayView<uint32>(Triangles2),
+				Vertices2,
+				nullptr,
+				[&Normals2, &Tangents2](int32 index, FVector3f Tangent, FVector3f Normal) -> void
+				{
+					Normals2[index] = Normal;
+					Tangents2[index] = Tangent;
+				},
+				true
+			);
+
+			Vertices.Append(Vertices2);
+			for (auto& Elem : Triangles2) Triangles.Add(Elem + BaseIndex);
+			Normals.Append(Normals2);
+			Tangents.Append(Tangents2);
+			UVs.Append(UVs2);
+
+			CoverVertices.Remove(Chunk);
+		}
+
+	} // scopelock.
+	
 
 	// Datas into StreamSet
 	OutStreamSet.Empty();
@@ -214,7 +219,7 @@ void FChunkBuilder::GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtime
 
 // DetailCount == how many squares will fit in one grid. (row)
 // do this only if there's one path.
-void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, const int32& DetailCount)
+void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, const TSet<FIntPoint> NoBuildChunks, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, const int32& DetailCount)
 {
 	if (int32(VertexSpacing / 100) % DetailCount != 0) // does not fit. (meter)
 	{
@@ -228,12 +233,11 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 
 	// x, y == local.
 	TArray<FVector> Path;
-	TSet<FIntPoint> PathChunks;
-	for (int32 i = 0; i < InPath.Num()-1; i++) // sample more points.
+	for (int32 i = 0; i < InPath.Num(); i++) // sample more points.
 	{
 		Path.Add(InPath[i]);
-		Path.Add((InPath[i] + InPath[i + 1]) / 2);
-		PathChunks.Add( GetChunk( FVector2D(InPath[i].X,InPath[i].Y) ) );
+		if (InPath.Num() > i + 1 && FVector::DistSquared2D(InPath[i], InPath[i + 1]) <= FMath::Square(VertexSpacing))
+			Path.Add((InPath[i] + InPath[i + 1]) / 2);
 	}
 	if (!InPath.IsEmpty()) Path.Add(InPath.Last());
 
@@ -242,7 +246,7 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 		for (int32 i = -1; i <= 1; i++)
 			NearChunks.Add(FIntPoint(i, j) + Chunk);
 
-	NearChunks = NearChunks.Difference(PathChunks); // only neighbor chunks without paths.
+	for (auto& Elem : NoBuildChunks) NearChunks.Remove(Elem);
 
 	// Read Function Name.
 	UpdateVertexLowerNeeded(Chunk, Path, CoverageRad);
@@ -288,23 +292,29 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 	}
 
 	// get from globally saved vertices.
-	TMap<FIntPoint, float>* FoundMap = CoverVertices.Find(Chunk);
-	if (FoundMap)
-	{
-		for (auto& GridHeight : *FoundMap)
+	{ // scopelock
+
+		FScopeLock Lock(&this->CoverVertMutex);
+
+		TMap<FIntPoint, float>* FoundMap = CoverVertices.Find(Chunk);
+		if (FoundMap)
 		{
-			FIntPoint SmallGrid = GridHeight.Key;
-			float SavedHeight = GridHeight.Value;
-			TPair<int32, float>* FoundPair = DetailNeeded.Find(SmallGrid);
-			if (!FoundPair) // only when SmallGrid does not exist.
+			for (auto& GridHeight : *FoundMap)
 			{
-				DetailNeeded.Add(SmallGrid, TPair<int32, float>(-1, SavedHeight) );
-			}	
+				FIntPoint SmallGrid = GridHeight.Key;
+				float SavedHeight = GridHeight.Value;
+				TPair<int32, float>* FoundPair = DetailNeeded.Find(SmallGrid);
+				if (!FoundPair) // only when SmallGrid does not exist.
+				{
+					DetailNeeded.Add(SmallGrid, TPair<int32, float>(-1, SavedHeight));
+				}
+			}
+
+			// done using it. remove entry
+			CoverVertices.Remove(Chunk);
 		}
 
-		// done using it. remove entry
-		CoverVertices.Remove(Chunk);
-	}
+	}	// scopelock
 
 	// sort by (X,Y) small to big
 	auto Sorter = [](const FIntPoint& A, const FIntPoint& B) 
@@ -391,7 +401,7 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 		IndexHeight.Value = Height;
 
 		// figure out if it's okay to make this vertex.
-		if ( IsGridInChunk(Chunk, SGlobalGrid, DetailCount) )
+		if ( IsGridInChunk( Chunk, SGlobalGrid, DetailCount ) )
 		{
 			IndexHeight.Key = Index++;
 			// set UVs.
@@ -453,19 +463,26 @@ void FChunkBuilder::GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVecto
 		TSet<FIntPoint> OtherChunks;
 		GetPossibleChunks(Grid, DetailCount, OtherChunks);
 		OtherChunks.Remove(Chunk); // remove self.
-		for (auto& OtherChunk : OtherChunks)
-		{
-			if (!NearChunks.Contains(OtherChunk)) continue;
-			TMap<FIntPoint, float>* Finder = CoverVertices.Find(OtherChunk);
-			if (Finder) (*Finder).Add(Grid, Height); // if found, just add.
-			else // if not found, make one.
-			{
-				TMap<FIntPoint, float> TempMap;
-				TempMap.Add(Grid, Height);
-				CoverVertices.Add(OtherChunk, TempMap);
-			}
-		}
 
+		{ // scopelock
+			FScopeLock Lock(&this->CoverVertMutex);
+
+			for (auto& OtherChunk : OtherChunks)
+			{
+				if ( !NearChunks.Contains(OtherChunk) ) continue;
+
+				TMap<FIntPoint, float>* Finder = CoverVertices.Find(OtherChunk);
+				if (Finder) (*Finder).Add(Grid, Height); // if found, just add.
+				else // if not found, make one.
+				{
+					TMap<FIntPoint, float> TempMap;
+					TempMap.Add(Grid, Height);
+					CoverVertices.Add(OtherChunk, TempMap);
+				}
+
+			}
+
+		} // scopelock
 
 
 		FIntPoint LocalGrid = Grid - Chunk * (VerticesPerChunk - 1) * DetailCount;
@@ -660,35 +677,46 @@ void FChunkBuilder::UpdateVertexLowerNeeded(const FIntPoint& Chunk, const TArray
 	// filter.
 	for (auto& Remover : ToRemove) VertexSet.Remove(Remover);
 
-	TSet<FIntPoint>* Finder = VertexLowerNeeded.Find(Chunk);
-	if (Finder)
-	{
-		for (auto& Elem : *Finder) VertexSet.Add(Elem);
-	}
 
+	// accessing VertexLowerNeeded.
 
-	for (auto& Vertex : VertexSet)
-	{
-		TSet<FIntPoint> Chunks;
-		GetPossibleChunks(Vertex, 1, Chunks);
-		for (auto& NewChunk : Chunks)
+	{	// scopelock
+
+		FScopeLock Lock(&this->VertexLowerMutex); // thread safe, multithreading.
+
+		TSet<FIntPoint>* Finder = VertexLowerNeeded.Find(Chunk);
+		if (Finder)
 		{
-			Finder = nullptr;
-			Finder = VertexLowerNeeded.Find(NewChunk);
-			if (Finder) (*Finder).Add(Vertex);
-			else
+			for (auto& Elem : *Finder) VertexSet.Add(Elem);
+		}
+
+		for (auto& Vertex : VertexSet)
+		{
+			TSet<FIntPoint> Chunks;
+			GetPossibleChunks(Vertex, 1, Chunks);
+			for (auto& NewChunk : Chunks)
 			{
-				TSet<FIntPoint> TempVertSet;
-				TempVertSet.Add(Vertex);
-				VertexLowerNeeded.Add(NewChunk, TempVertSet);
+				Finder = nullptr;
+				Finder = VertexLowerNeeded.Find(NewChunk);
+				if (Finder) (*Finder).Add(Vertex);
+				else
+				{
+					TSet<FIntPoint> TempVertSet;
+					TempVertSet.Add(Vertex);
+					VertexLowerNeeded.Add(NewChunk, TempVertSet);
+				}
 			}
 		}
-	}
+
+	}	// scopelock
 
 }
 
 void FChunkBuilder::ApplyVertexLowerNeeded(const FIntPoint& Chunk, TArray<FVector3f>& Vertices)
 {
+	// accessing VertexLowerNeeded.
+	FScopeLock Lock(&this->VertexLowerMutex); // thread safe, multithreading.
+
 	TSet<FIntPoint>* VertexSet = VertexLowerNeeded.Find(Chunk);
 	if (!VertexSet) return;
 
@@ -944,14 +972,20 @@ void FChunkBuilder::GetPossibleChunks(const FIntPoint& GlobalSmallGrid, const in
 
 	float ModX = FMath::Fmod(ActualPos.X, ChunkLength);
 	float ModY = FMath::Fmod(ActualPos.Y, ChunkLength);
-	float SmallValue = 0.1f;
+	float SmallValue = VertexSpacing / 5 - 10.f;
 
-	bool OnBoundaryX = (ModX <= SmallValue) || (ChunkLength - ModX <= SmallValue);
-	bool OnBoundaryY = (ModY <= SmallValue) || (ChunkLength - ModY <= SmallValue);
+	bool XPlus = FMath::IsNearlyZero(ChunkLength - ModX, SmallValue);
+	bool YPlus = FMath::IsNearlyZero(ChunkLength - ModY, SmallValue);
 
-	if (OnBoundaryX)				OutChunks.Add(Chunk + FIntPoint(-1, 0));
-	if (OnBoundaryY)				OutChunks.Add(Chunk + FIntPoint(0, -1));
-	if (OnBoundaryX && OnBoundaryY) OutChunks.Add(Chunk + FIntPoint(-1, -1));
+	bool XMinus = FMath::IsNearlyZero(ModX, SmallValue);
+	bool YMinus = FMath::IsNearlyZero(ModY, SmallValue);
+
+	if ( (XPlus && XMinus) || (YPlus && YMinus) ) UE_LOG(LogTemp, Warning, TEXT("PossibleChunks Error"));
+
+	if (XPlus) OutChunks.Add(Chunk + FIntPoint(1, 0));
+	if (YPlus) OutChunks.Add(Chunk + FIntPoint(0, 1));
+	if (XMinus) OutChunks.Add(Chunk + FIntPoint(-1, 0));
+	if (YMinus) OutChunks.Add(Chunk + FIntPoint(0, -1));
 
 	return;
 }

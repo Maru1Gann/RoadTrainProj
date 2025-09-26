@@ -16,7 +16,10 @@ ALandscapeManager::ALandscapeManager()
 	RoadMesh = nullptr;
 	IsPath = false;
 	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
-
+	FrameCounter = 0;
+	UpdateDelayFrames = 2;
+	LastLocChanged = false;
+	bool UseAsnyc = true;
 }
 
 void ALandscapeManager::OnConstruction(const FTransform& Transform)
@@ -33,17 +36,28 @@ void ALandscapeManager::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	
-	if (IsPath)
+	if (!UseAsync)
 	{
-		FVector PlayerLocation = GetPlayerLocation();
-		if (GetChunk(PlayerLocation) != LastLocation)
+		if (IsPath)
 		{
-			LastLocation = GetChunk(PlayerLocation);
-			GenerateChunks(PlayerLocation);
-			RemoveChunks(PlayerLocation);
+			FVector PlayerLocation = GetPlayerLocation();
+			if (GetChunk(PlayerLocation) != LastLocation)
+			{
+				LastLocation = GetChunk(PlayerLocation);
+				GenerateChunks(PlayerLocation);
+				RemoveChunks(PlayerLocation);
+			}
 		}
 	}
-	
+	else
+	{
+		if ( ChunkQueue.IsEmpty() && ChunkRemovalQueue.IsEmpty() && ShouldDoWork() )
+		{
+			AsyncWork();
+		}
+
+		ProcessQueues();
+	}
 
 }
 
@@ -111,6 +125,7 @@ void ALandscapeManager::GenerateLandscapeWithPath()
 
 		TArray<FVector> Path;
 		TArray<FVector> PathForSpline;
+		TSet<FIntPoint> NoBuildChunks;
 		for (int32 j = -1; j <= 1; j++)
 			for (int32 i = -1; i <= 1; i++)
 			{
@@ -118,6 +133,7 @@ void ALandscapeManager::GenerateLandscapeWithPath()
 				TPair<FGate, FGate>* FoundGates = ChunkGates.Find(Target);
 				if (FoundGates)
 				{
+					NoBuildChunks.Add( Target );
 					TArray<FVector> TempPath;
 					PathFinder->GetActualPath((*FoundGates).Key, (*FoundGates).Value, TempPath);
 					Path.Append(TempPath);
@@ -126,7 +142,7 @@ void ALandscapeManager::GenerateLandscapeWithPath()
 			}
 
 		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-		ChunkBuilder->GetPathStreamSet(Elem, Path, StreamSet);
+		ChunkBuilder->GetPathStreamSet(Elem, Path, NoBuildChunks, StreamSet);
 		AddChunk(Elem, StreamSet, true);
 
 		USplineComponent* Spline;
@@ -156,12 +172,65 @@ void ALandscapeManager::RemoveLandscape()
 	Splines.Empty();
 }
 
+void ALandscapeManager::Debug()
+{
+	FlushPersistentDebugLines(GetWorld());
+	
+	FIntPoint Chunk = GetChunk(Start);
+	int32 DetailCount = 5;
+	float DetailSpacing = VertexSpacing / DetailCount;
 
+	for(int32 k = 0; k < VerticesPerChunk-1; k++)
+		for(int32 l = 0; l < VerticesPerChunk-1; l++)
+			for(int32 j = 0; j<=DetailCount; j++)
+				for (int32 i = 0; i <= DetailCount; i++)
+				{
+					FIntPoint Offset = ( Chunk * (VerticesPerChunk-1) + FIntPoint(l,k) ) * (DetailCount);
+					FIntPoint DetailGrid = Offset + FIntPoint(i, j);
+					FVector ActualPos = FVector(DetailGrid.X, DetailGrid.Y, 0.f) * DetailSpacing;
+					ActualPos.Z = GetHeight(FVector2D(ActualPos.X, ActualPos.Y)) + 100.f;
+
+					FColor Color = FColor::Cyan;
+					bool Draw = false;
+					if (!ChunkBuilder->IsGridInChunk(Chunk, DetailGrid, DetailCount))	Color = FColor::Red, Draw = true;
+					if (ChunkBuilder->IsOnBoundary(DetailGrid, DetailCount))			Color = FColor::Purple, Draw = true;
+					if (Draw) DrawDebugPoint(GetWorld(), ActualPos, 15.f, Color, true);
+				}
+}
 
 float ALandscapeManager::GetHeight( const FVector2D& Location )
 {
 	return ChunkBuilder->GetHeight(Location);
 }
+
+// returns center of grid.
+FVector ALandscapeManager::GridToVector(const FIntPoint& GlobalGrid)
+{
+	FVector Out;
+	Out.X = (GlobalGrid.X + 0.5f) * VertexSpacing;
+	Out.Y = (GlobalGrid.Y + 0.5f) * VertexSpacing;
+	Out.Z = GetHeight(FVector2D(Out.X, Out.Y));
+	return Out;
+}
+
+FIntPoint ALandscapeManager::GetChunk(const FIntPoint& GlobalGrid)
+{
+	FIntPoint Chunk;
+	Chunk.X = FMath::FloorToInt32(float(GlobalGrid.X) / float(VerticesPerChunk - 1));
+	Chunk.Y = FMath::FloorToInt32(float(GlobalGrid.Y) / float(VerticesPerChunk - 1));
+	return Chunk;
+}
+
+FIntPoint ALandscapeManager::GetChunk(const FVector& Vector)
+{
+	FIntPoint Chunk;
+	Chunk.X = FMath::FloorToInt32(Vector.X / ChunkLength);
+	Chunk.Y = FMath::FloorToInt32(Vector.Y / ChunkLength);
+	return Chunk;
+}
+
+
+// private бщ
 
 // Add Chunk as an Actor into the world.
 void ALandscapeManager::AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet, bool IsPathChunk)
@@ -221,15 +290,20 @@ void ALandscapeManager::AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRe
 }
 
 // check and remove chunk and entry from Member::Chunks TMap
-void ALandscapeManager::RemoveChunk(const FIntPoint& Chunk)
+bool ALandscapeManager::RemoveChunk(const FIntPoint& Chunk)
 {
+	
 	ARealtimeMeshActor** ppRMA, ** ppPathRMA;
 	ppRMA = Chunks.Find(Chunk);
 	ppPathRMA = PathChunks.Find(Chunk);
 
+	bool Out = false;
+	if (ppRMA || ppPathRMA) Out = true;
+
 	if(ppRMA)		(*ppRMA)->Destroy();
 	if(ppPathRMA)	(*ppPathRMA)->Destroy();
 
+	return Out;
 }
 
 // Returns 2d index of whirl. Used for chunk generation from closest point.
@@ -299,8 +373,12 @@ USplineComponent* ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const
 		UE_LOG(LogTemp, Warning, TEXT("WTF"));
 		return nullptr;
 	}
-
 	ARealtimeMeshActor* pRMA = (*ppRMA);
+	if (!pRMA)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("WTF"));
+		return nullptr;
+	}
 
 	USplineComponent* Spline = NewObject<USplineComponent>(pRMA); // add spline component
 	Spline->RegisterComponent(); // register to world.
@@ -324,8 +402,6 @@ USplineComponent* ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const
 	{ (*ppSpline)->DestroyComponent(); } // if already exists, remove it
 
 	Splines.Add(Chunk, Spline); // add it to TMap.
-
-	
 
 	return Spline;
 }
@@ -376,6 +452,7 @@ void ALandscapeManager::GenerateChunks(const FVector& PlayerLoc)
 
 		TArray<FVector> Path;
 		TArray<FVector> PathForSpline;
+		TSet<FIntPoint> NoBuildChunks;
 		for (int32 j = -1; j <= 1; j++)
 			for (int32 i = -1; i <= 1; i++)
 			{
@@ -384,6 +461,7 @@ void ALandscapeManager::GenerateChunks(const FVector& PlayerLoc)
 				if (FoundGates)
 				{
 					TArray<FVector> TempPath;
+					NoBuildChunks.Add(Target);
 					PathFinder->GetActualPath((*FoundGates).Key, (*FoundGates).Value, TempPath);
 					Path.Append(TempPath);
 					if (i == 0 && j == 0) PathForSpline = TempPath;
@@ -391,7 +469,7 @@ void ALandscapeManager::GenerateChunks(const FVector& PlayerLoc)
 			}
 
 		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
-		ChunkBuilder->GetPathStreamSet(Elem, Path, StreamSet);
+		ChunkBuilder->GetPathStreamSet(Elem, Path, NoBuildChunks, StreamSet);
 		AddChunk(Elem, StreamSet, true);
 
 		USplineComponent* Spline;
@@ -459,28 +537,230 @@ FVector ALandscapeManager::GetPlayerLocation()
 		return FVector(0.f, 0.f, 0.f);
 }
 
-// returns center of grid.
-FVector ALandscapeManager::GridToVector(const FIntPoint& GlobalGrid)
+// async works below.
+
+void ALandscapeManager::AsyncWork()
 {
-	FVector Out;
-	Out.X = (GlobalGrid.X + 0.5f)  * VertexSpacing;
-	Out.Y = (GlobalGrid.Y + 0.5f)  * VertexSpacing;
-	Out.Z = GetHeight(FVector2D(Out.X, Out.Y));
+	FIntPoint ChunkNow = GetChunk(GetPlayerLocation());
+
+	TSet<FIntPoint> ChunksToRemove;
+	TArray<FIntPoint> ChunksNeeded, RoadChunksNeeded;
+
+	// find Chunks need to be removed.	( game thread )
+	FindChunksToRemove(ChunkNow, ChunksToRemove);
+	for (auto& Elem : ChunksToRemove) ChunkRemovalQueue.Enqueue(Elem);
+
+	// find Chunks need to be made.( game thread )
+	FindChunksToMake(ChunkNow, RoadChunksNeeded, ChunksNeeded);
+
+	// make subset of ChunkGates to pass it to worker threads.
+	TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap;
+	FindChunkGates(ChunkNow, NearGatesMap);
+
+
+	// make datas for it ( background thread )
+	// need to work with all the paths first. ( for continuous chunks )
+
+	AsyncTask(ENamedThreads::AnyBackgroundHiPriTask, [this, RoadChunksNeeded, ChunksNeeded, NearGatesMap]()
+		{
+			this->UpdateDataQueue(RoadChunksNeeded, ChunksNeeded, NearGatesMap);
+		}
+	);
+
+}
+
+void ALandscapeManager::FindChunksToMake(const FIntPoint& ChunkNow, TArray<FIntPoint>& RoadChunksNeeded, TArray<FIntPoint>& ChunksNeeded)
+{
+	RoadChunksNeeded.Empty();
+	ChunksNeeded.Empty();
+
+	for (auto& Chunk : ChunkOrder)
+	{
+		FIntPoint Target = Chunk + ChunkNow;
+		if ( !PathChunks.Contains(Target) && ChunkGates.Contains(Target) )
+		{
+			RoadChunksNeeded.Add(Target);
+		}
+
+		if (!Chunks.Contains(Target))
+		{
+			ChunksNeeded.Add(Target);
+		}
+	}
+
+	return;
+}
+
+void ALandscapeManager::FindChunksToRemove(const FIntPoint& ChunkNow, TSet<FIntPoint>& ChunksToRemove)
+{
+	ChunksToRemove.Empty();
+	TSet<FIntPoint> CurrentChunks;
+	for (auto& Elem : ChunkOrder) CurrentChunks.Add(ChunkNow + Elem);
+
+	for (auto& Elem : Chunks)
+	{
+		if (!CurrentChunks.Contains(Elem.Key))
+			ChunksToRemove.Add(Elem.Key);
+	}
+	for (auto& Elem : PathChunks)
+	{
+		if (!CurrentChunks.Contains(Elem.Key))
+			ChunksToRemove.Add(Elem.Key);
+	}
+
+}
+
+void ALandscapeManager::FindChunkGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap)
+{
+	OutGatesMap.Empty();
+
+	for (auto& Elem : ChunkOrder)
+	{
+		FIntPoint TargetChunk = Elem + ChunkNow;
+		TPair<FGate, FGate>* FoundGates = this->ChunkGates.Find(TargetChunk);
+		if (FoundGates) OutGatesMap.Add(TargetChunk, (*FoundGates));
+	}
+}
+
+void ALandscapeManager::ProcessQueues()
+{
+	bool Work = false;
+	Work = ProcessRemovalQueue();
+	if( !Work ) ProcessChunkQueue();
+}
+
+bool ALandscapeManager::ProcessRemovalQueue()
+{
+	bool Out = false;
+	if (!ChunkRemovalQueue.IsEmpty())
+	{
+		FIntPoint Remover;
+		ChunkRemovalQueue.Dequeue(Remover);
+		Out = RemoveChunk(Remover);
+
+		Chunks.Remove(Remover);
+		PathChunks.Remove(Remover);
+		Splines.Remove(Remover);
+	}
 	return Out;
 }
 
-FIntPoint ALandscapeManager::GetChunk(const FIntPoint& GlobalGrid)
+bool ALandscapeManager::ProcessChunkQueue()
 {
-	FIntPoint Chunk;
-	Chunk.X = FMath::FloorToInt32(float(GlobalGrid.X) / float(VerticesPerChunk - 1));
-	Chunk.Y = FMath::FloorToInt32(float(GlobalGrid.Y) / float(VerticesPerChunk - 1));
-	return Chunk;
+	FChunkData TempData;
+	bool Out = false;
+	if (!ChunkQueue.IsEmpty())
+	{
+		ChunkQueue.Dequeue(TempData);
+
+		if (!TempData.ActualPath.IsEmpty() && !PathChunks.Contains(TempData.Chunk))
+		{
+			AddChunk(TempData.Chunk, TempData.StreamSet, true);
+			USplineComponent* pSpline = AddPathSpline(TempData.Chunk, TempData.ActualPath);
+			MakeRoad(pSpline);
+
+			Out = true;
+		}
+		else if (TempData.ActualPath.IsEmpty() && !Chunks.Contains(TempData.Chunk)) // normalchunk && not already made.
+		{
+			AddChunk(TempData.Chunk, TempData.StreamSet, false);
+			Out = true;
+		}
+	}
+	return Out;
 }
 
-FIntPoint ALandscapeManager::GetChunk(const FVector& Vector)
+bool ALandscapeManager::ShouldDoWork()
 {
-	FIntPoint Chunk;
-	Chunk.X = FMath::FloorToInt32(Vector.X / ChunkLength);
-	Chunk.Y = FMath::FloorToInt32(Vector.Y / ChunkLength);
-	return Chunk;
+	FIntPoint ChunkNow = GetChunk(GetPlayerLocation());
+	bool DoWork = false;
+	const int32& Divider = UpdateDelayFrames;
+	int32& Counter = FrameCounter;
+
+	if (ChunkNow != LastLocation)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("LastLocChanged"));
+		LastLocChanged = true;
+		LastLocation = ChunkNow;
+		Counter = 1;
+	}
+	else if (LastLocChanged)
+	{
+		
+		Counter += 1;
+		UE_LOG(LogTemp, Warning, TEXT("Counting %d"), Counter);
+		if (Counter % Divider == 0)
+		{
+			Counter %= Divider;
+			LastLocChanged = false;
+			DoWork = true;
+		}
+	}
+
+	return DoWork;
+}
+
+
+
+void ALandscapeManager::UpdateDataQueue(const TArray<FIntPoint> RoadChunksNeeded, const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap)
+{
+
+	// road(path)chunks first. (for continuous chunks)
+	ParallelFor(RoadChunksNeeded.Num(), [&RoadChunksNeeded, &NearGatesMap, this] (int32 Index) 
+		{ // lambda body
+			FIntPoint Chunk = RoadChunksNeeded[Index];
+			FChunkData TempChunkData = MakePathChunkData(Chunk, NearGatesMap);
+			this->ChunkQueue.Enqueue(TempChunkData);
+		}
+	);
+	
+	ParallelFor(ChunksNeeded.Num(), [&ChunksNeeded, this](int32 Index)
+		{ // lambda body
+			FIntPoint Chunk = ChunksNeeded[Index];
+			FChunkData TempChunkData = MakeChunkData(Chunk);
+			this->ChunkQueue.Enqueue(TempChunkData);
+		}
+	);
+
+}
+
+FChunkData ALandscapeManager::MakePathChunkData(const FIntPoint TargetChunk, const TMap<FIntPoint, TPair<FGate, FGate>> NearPaths)
+{
+	TArray<FVector> Paths;
+	TArray<FVector> PathForSpline;
+	TSet<FIntPoint> NoBuildChunks;
+
+	for(int32 j = -1; j<=1; j++)
+		for (int32 i = -1; i <= 1; i++)
+		{
+			FIntPoint Neighbor = TargetChunk + FIntPoint(i, j);
+			const TPair<FGate, FGate>* FoundGates = NearPaths.Find(Neighbor);
+			if (!FoundGates) continue;
+
+			NoBuildChunks.Add( Neighbor );
+
+			TArray<FVector> TempPath;
+			PathFinder->GetActualPath((*FoundGates).Key, (*FoundGates).Value, TempPath);
+			Paths.Append(TempPath);
+
+			if (i == 0 && j == 0) PathForSpline = TempPath;
+		}
+
+	RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+	ChunkBuilder->GetPathStreamSet(TargetChunk, Paths, NoBuildChunks, StreamSet);
+
+	FChunkData Out(TargetChunk, StreamSet, PathForSpline);
+
+	return Out;
+}
+
+FChunkData ALandscapeManager::MakeChunkData(const FIntPoint TargetChunk)
+{
+	RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+	ChunkBuilder->GetStreamSet(TargetChunk, StreamSet);
+
+	TArray<FVector> EmptyArray;
+	EmptyArray.Empty();
+	FChunkData Out(TargetChunk, StreamSet, EmptyArray);
+	return Out;
 }

@@ -37,7 +37,7 @@ public:
     
 
     void GetStreamSet(const FIntPoint& Chunk, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, int32 DetailCount = 5);
-	void GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, const int32& DetailCount = 5);
+	void GetPathStreamSet(const FIntPoint& Chunk, const TArray<FVector>& InPath, const TSet<FIntPoint> NoBuildChunks, RealtimeMesh::FRealtimeMeshStreamSet& OutStreamSet, const int32& DetailCount = 5);
     float GetHeight( const FVector2D& Location );
 
 private:
@@ -49,6 +49,7 @@ private:
 
 	int32 CoverageRad;
 
+	FCriticalSection VertexLowerMutex, CoverVertMutex;
 	TMap< FIntPoint, TSet<FIntPoint> > VertexLowerNeeded;		// Chunk, GlobalFIntPoint.
 	TMap< FIntPoint, TMap<FIntPoint, float>> CoverVertices;		// Chunk, TMap<SGlobalGrid, Height>.
 

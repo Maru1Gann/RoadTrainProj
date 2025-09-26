@@ -16,6 +16,7 @@
 
 struct FPerlinNoiseVariables;
 class USplineComponent;
+struct FChunkData;
 
 UCLASS()
 class ROADTRAINPROJ_API ALandscapeManager : public AActor
@@ -50,7 +51,15 @@ public:
 	    TArray<FPerlinNoiseVariables> NoiseLayers;
 
     UPROPERTY( EditAnywhere, Category = "Terrain|Material", meta = (DisplayPriority = 1) )
-    UMaterialInterface* Material;
+        UMaterialInterface* Material;
+
+    UPROPERTY(EditAnywhere, Category = "Terrain|Async", meta = (DisplayPriority = 0))
+        bool UseAsync;
+
+    // Wait how many frames before updating chunks after playerlocated chunk changed.
+    UPROPERTY( EditAnywhere, Category = "Terrain|Async", meta = (DisplayPriority = 1) )
+        int32 UpdateDelayFrames;
+
 
     // ----------------Vars for PathFinding--------------------
     UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 1) )
@@ -74,9 +83,12 @@ public:
         void GenerateLandscapeWithPath();
     UFUNCTION(CallInEditor, Category = "Terrain")
         void RemoveLandscape();
+    UFUNCTION(CallInEditor, Category = "Terrain")
+        void Debug();
+
 
     void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet, bool IsPathChunk = false);
-    void RemoveChunk(const FIntPoint& Chunk);
+    bool RemoveChunk(const FIntPoint& Chunk);
 
     // tools
     float GetHeight(const FVector2D& Location);
@@ -89,15 +101,18 @@ private:
     // ก้ use it only on game thread
     bool IsPath;
     FIntPoint LastLocation;
+    bool LastLocChanged;
+    int32 FrameCounter;
     TArray<FGate> GatePath;
     TMap<FIntPoint, TPair<FGate, FGate>> ChunkGates;
     // ก่ game thread only
 
 
     // ก้ background thread produces.
-    TQueue< TPair<FIntPoint, RealtimeMesh::FRealtimeMeshStreamSet> >    ChunkQueue;
-    TQueue<FIntPoint>                                                   ChunkRemovalQueue;
+    TQueue<FChunkData, EQueueMode::Mpsc>  ChunkQueue;
     // ก่ background thread produces.
+    TQueue<FIntPoint>   ChunkRemovalQueue;
+    
 
     std::unique_ptr<FChunkBuilder> ChunkBuilder;
 
@@ -120,4 +135,31 @@ private:
     void RemoveChunks(const FVector& PlayerLoc);
     FVector GetPlayerLocation();
 
+    void AsyncWork();
+    void FindChunksToMake(const FIntPoint& ChunkNow, TArray<FIntPoint>& RoadChunksNeeded, TArray<FIntPoint>& ChunksNeeded);
+    void FindChunksToRemove(const FIntPoint& ChunkNow, TSet<FIntPoint>& ChunksToRemove);
+    void FindChunkGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap);
+
+    bool LastWork = true;
+    void ProcessQueues();
+    bool ProcessRemovalQueue();
+    bool ProcessChunkQueue();
+    bool ShouldDoWork();
+
+    void UpdateDataQueue(const TArray<FIntPoint> RoadChunksNeeded, const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap);
+    FChunkData MakePathChunkData(const FIntPoint TargetChunk, const TMap<FIntPoint, TPair<FGate, FGate>> NearPaths);
+    FChunkData MakeChunkData(const FIntPoint TargetChunk);
+};
+
+
+
+struct FChunkData // dataset for queue.
+{
+    FChunkData() {};
+    FChunkData(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet, const TArray<FVector>& ActualPath) :
+        Chunk(Chunk), StreamSet(StreamSet), ActualPath(ActualPath) {};
+    
+    FIntPoint Chunk;
+    RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+    TArray<FVector> ActualPath;
 };
