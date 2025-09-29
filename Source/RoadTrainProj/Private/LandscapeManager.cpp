@@ -28,6 +28,8 @@ ALandscapeManager::ALandscapeManager()
 
 	CoverageRadius = 3;
 	DetailCount = 5;
+
+	RoadScale = FVector2D(2.0f, 5.0f);
 }
 
 void ALandscapeManager::OnConstruction(const FTransform& Transform)
@@ -258,8 +260,8 @@ void ALandscapeManager::AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRe
 	{ pRMC->SetMaterial(0, Material); }
 
 	// add it to status (member)
-	{ // scopelock only when writing.
-		FScopeLock Lock(&ChunksMutex);
+	{ // scopelock writing.
+		FRWScopeLock Lock(RWChunksMutex, FRWScopeLockType::SLT_Write);
 		Chunks.Add(Chunk, pRMA); 
 	}
 	
@@ -281,7 +283,8 @@ bool ALandscapeManager::RemoveChunk(const FIntPoint& Chunk)
 	}
 	if (Destroyed)
 	{
-		FScopeLock Lock(&ChunksMutex);
+		// scopelock writing.
+		FRWScopeLock Lock(RWChunksMutex, FRWScopeLockType::SLT_Write);
 		Chunks.Remove(Chunk);
 	}
 	return true;
@@ -410,8 +413,8 @@ void ALandscapeManager::MakeRoad(USplineComponent* Spline)
 
 		SplineMesh->SetStaticMesh(RoadMesh);
 		SplineMesh->SetStartAndEnd(StartPos, StartTangent, EndPos, EndTangent);
-		SplineMesh->SetStartScale(FVector2D(2.0f, 5.0f));
-		SplineMesh->SetEndScale(FVector2D(2.0f, 5.0f));
+		SplineMesh->SetStartScale(RoadScale);
+		SplineMesh->SetEndScale(RoadScale);
 		SplineMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	}
 }
@@ -468,15 +471,27 @@ void ALandscapeManager::AsyncWork(const FIntPoint& ChunkNow)
 // game thread work.
 void ALandscapeManager::Process(const FIntPoint& ChunkNow)
 {
+	// always remove first.
+	bool Removed = FindAndRemoveChunk(ChunkNow);
+	if(!Removed) DequeueAndAddChunk(ChunkNow);
+}
+
+bool ALandscapeManager::FindAndRemoveChunk(const FIntPoint& ChunkNow)
+{
 	for (auto& Elem : Chunks)
 	{
-		if ( !IsChunkInRad(ChunkNow, Elem.Key) )
+		if (!IsChunkInRad(ChunkNow, Elem.Key))
 		{
 			RemoveChunk(Elem.Key);
-			break;
+			return true;
 		}
 	}
 
+	return false;
+}
+
+bool ALandscapeManager::DequeueAndAddChunk(const FIntPoint& ChunkNow)
+{
 
 	while (!ChunkQueue.IsEmpty())
 	{
@@ -486,13 +501,15 @@ void ALandscapeManager::Process(const FIntPoint& ChunkNow)
 		const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet = ChunkData.StreamSet;
 		const TArray<FVector> Path = ChunkData.ActualPath;
 
-		if ( !Chunks.Contains(Chunk) && IsChunkInRad(ChunkNow, Chunk) )
+		if (!Chunks.Contains(Chunk) && IsChunkInRad(ChunkNow, Chunk))
 		{
 			AddChunk(Chunk, StreamSet);
 			if (!Path.IsEmpty()) AddPathSpline(Chunk, Path);
-			break;
+			return true;
 		}
 	}
+
+	return false;
 }
 
 
@@ -558,12 +575,18 @@ void ALandscapeManager::FindChunksNeeded(const FIntPoint& ChunkNow, TArray<FIntP
 {
 	OutChunksNeeded.Empty();
 	TQueue<FIntPoint, EQueueMode::Mpsc> TempQueue;
-	ParallelFor(ChunkOrder.Num(), [&TempQueue, ChunkNow, this](int32 Index)
-		{
-			FIntPoint Target = this->ChunkOrder[Index] + ChunkNow;
-			if (!Chunks.Contains(Target)) TempQueue.Enqueue(Target);
-		}
-	);
+
+	{// scopelock read
+		FRWScopeLock Lock(RWChunksMutex, FRWScopeLockType::SLT_ReadOnly);
+
+		ParallelFor(ChunkOrder.Num(), [&TempQueue, ChunkNow, this](int32 Index)
+			{
+				FIntPoint Target = this->ChunkOrder[Index] + ChunkNow;
+				if (!Chunks.Contains(Target)) TempQueue.Enqueue(Target);
+			}
+		);
+
+	}
 
 	while (!TempQueue.IsEmpty())
 	{

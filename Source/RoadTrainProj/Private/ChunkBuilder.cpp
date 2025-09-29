@@ -291,7 +291,6 @@ void FChunkBuilder::GetPathStreamSetComponents(const FIntPoint& Chunk, const TAr
 		Alpha = FMath::Clamp(Alpha, 0.f, 1.f);
 		Height = FMath::Lerp(Height, RoadHeight, Alpha);
 
-
 		// --------------------Height Adjustment-------------------------- End
 
 

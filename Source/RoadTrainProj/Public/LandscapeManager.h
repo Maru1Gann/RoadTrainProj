@@ -73,14 +73,14 @@ public:
         FIntPoint End;      // global
     UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 3, ClampMin = "0.0", ClampMax = "100.0") )
 	    float MaxSlope = 30;
-    UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "0.0", ClampMax = "180.0") )
-        float MaxRoadAngle = 15;
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 5, ClampMin = "0"))
         int32 CounterHardLock = 1000;
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 6))
         bool DrawPathDebug = false;
-    UPROPERTY( EditAnywhere, Category = "Path|Mesh")
+    UPROPERTY( EditAnywhere, Category = "Path|Mesh", meta = (DisplayPriority = 1, ClampMin = "0.0", ClampMax = "180.0"))
         UStaticMesh* RoadMesh;
+    UPROPERTY(EditAnywhere, Category = "Path|Mesh", meta = (DisplayPriority = 2, ClampMin = "0.1", ClampMax = "20.0"))
+        FVector2D RoadScale;
 
     UFUNCTION(CallInEditor, Category = "Terrain")
         void GenerateLandscape();
@@ -127,7 +127,7 @@ private:
 
     std::unique_ptr<FChunkBuilder> ChunkBuilder;
 
-    FCriticalSection ChunksMutex;
+    FRWLock RWChunksMutex;
     TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
 
     std::unique_ptr<FPathFinder> PathFinder;
@@ -148,9 +148,15 @@ private:
 
    
     // async related below
-
+    
+    // game thread tasks.
     void Process(const FIntPoint& ChunkNow);
+    // part of process.
+    bool FindAndRemoveChunk(const FIntPoint& ChunkNow);
+    bool DequeueAndAddChunk(const FIntPoint& ChunkNow);
 
+
+    // background thread tasks.
     void AsyncWork(const FIntPoint& ChunkNow);
 
     void UpdateDataQueue(const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap);
@@ -161,7 +167,7 @@ private:
     void FindNearGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap);
     void FindChunksNeeded(const FIntPoint& ChunkNow, TArray<FIntPoint>& OutChunksNeeded);
 
-    // game thread
+    // game thread. checks if work needed.
     bool ShouldDoWork(const FIntPoint& ChunkNow);
 
 };
