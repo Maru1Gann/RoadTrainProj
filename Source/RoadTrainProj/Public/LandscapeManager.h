@@ -62,7 +62,9 @@ public:
     // Wait how many frames before updating chunks after playerlocated chunk changed.
     UPROPERTY( EditAnywhere, Category = "Terrain|Async", meta = (DisplayPriority = 1) )
         int32 UpdateDelayFrames;
-
+    // Update chunk when the amount of frames change.
+    UPROPERTY(EditAnywhere, Category = "Terrain|Async", meta = (DisplayPriority = 1))
+        int32 DoWorkFrame;
 
     // ----------------Vars for PathFinding--------------------
     UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 1) )
@@ -91,7 +93,7 @@ public:
 
 
     void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
-    bool DestroyChunk(const FIntPoint& Chunk);
+    bool RemoveChunk(const FIntPoint& Chunk);
 
     // tools
     float GetHeight(const FVector2D& Location);
@@ -101,13 +103,17 @@ public:
 
 private:
 
+    float ChunkLength;
+
     // ก้ use it only on game thread
 
     bool IsPath;
     FIntPoint LastLocation;
     bool LastLocChanged;
     int32 FrameCounter;
+    int32 ShouldWorkCounter;
 
+    FCriticalSection GatesMutex;
     TArray<FGate> GatePath;
     TMap<FIntPoint, TPair<FGate, FGate>> GateMap;
 
@@ -117,22 +123,22 @@ private:
     // ก้ background thread produces.
     TQueue<FChunkData, EQueueMode::Mpsc>  ChunkQueue;
     // ก่ background thread produces.
-    TQueue<FIntPoint>   ChunkRemovalQueue;
     
 
     std::unique_ptr<FChunkBuilder> ChunkBuilder;
 
+    FCriticalSection ChunksMutex;
     TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
-    TMap<FIntPoint, USplineComponent*> Splines;
-    float ChunkLength;
 
     std::unique_ptr<FPathFinder> PathFinder;
 
+    // write only at beginplay. (or onconstruction )
     TArray<FIntPoint> ChunkOrder;
     TArray<FIntPoint> BigChunkOrder;
 
     // tools
     void GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& OutArray);
+    bool IsChunkInRad(const FIntPoint& ChunkNow, const FIntPoint& TargetChunk);
 
     USplineComponent* AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path);
     void MakeRoad(USplineComponent* Spline);
@@ -143,20 +149,20 @@ private:
    
     // async related below
 
-    void ProcessQueue();
+    void Process(const FIntPoint& ChunkNow);
 
-    void AsyncWork();
+    void AsyncWork(const FIntPoint& ChunkNow);
 
     void UpdateDataQueue(const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap);
     FChunkData MakeChunkData(const FIntPoint TargetChunk, const TArray< TPair<FGate, FGate> > NearGates);
 
-    // game thread
+   
+    // mutex
     void FindNearGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap);
-    void FindChunksToRemove(const FIntPoint& ChunkNow, TSet<FIntPoint>& ChunksToRemove);
-    void FindChunksToMake(const FIntPoint& ChunkNow, TArray<FIntPoint>& ChunksNeeded);
-    // game thread
+    void FindChunksNeeded(const FIntPoint& ChunkNow, TArray<FIntPoint>& OutChunksNeeded);
 
-    bool ShouldDoWork();
+    // game thread
+    bool ShouldDoWork(const FIntPoint& ChunkNow);
 
 };
 
