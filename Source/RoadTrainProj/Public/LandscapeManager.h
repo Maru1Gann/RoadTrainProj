@@ -109,7 +109,6 @@ private:
 
     bool IsPath;
     FIntPoint LastLocation;
-    bool LastLocChanged;
     int32 FrameCounter;
     int32 ShouldWorkCounter;
 
@@ -139,6 +138,7 @@ private:
     // tools
     void GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& OutArray);
     bool IsChunkInRad(const FIntPoint& ChunkNow, const FIntPoint& TargetChunk);
+    bool IsChunkInRad(const FIntPoint& ChunkNow, const FIntPoint& TargetChunk, const int32& BoxRadius);
 
     USplineComponent* AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path);
     void MakeRoad(USplineComponent* Spline);
@@ -170,6 +170,12 @@ private:
     // game thread. checks if work needed.
     bool ShouldDoWork(const FIntPoint& ChunkNow);
 
+
+    // inf pathfinding stuffs
+
+    bool ShouldUpdateGoal(const FIntPoint& ChunkNow);
+    void UpdateGoal();
+
 };
 
 
@@ -184,3 +190,5 @@ struct FChunkData // dataset for queue.
     RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
     TArray<FVector> ActualPath;
 };
+
+

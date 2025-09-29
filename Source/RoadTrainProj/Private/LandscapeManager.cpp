@@ -23,7 +23,6 @@ ALandscapeManager::ALandscapeManager()
 	UpdateDelayFrames = 2;
 	DoWorkFrame = 3;
 
-	LastLocChanged = false;
 	UseAsync = true;
 
 	CoverageRadius = 3;
@@ -174,6 +173,10 @@ void ALandscapeManager::RemoveLandscape()
 void ALandscapeManager::Debug()
 {
 	FlushPersistentDebugLines(GetWorld());
+
+	TMap<FIntPoint, TPair<FGate, float>> Gates;
+	PathFinder->GetGates(FGate(Start), Start, Gates, true);
+	
 }
 
 float ALandscapeManager::GetHeight( const FVector2D& Location )
@@ -353,6 +356,11 @@ bool ALandscapeManager::IsChunkInRad(const FIntPoint& ChunkNow, const FIntPoint&
 {
 	FIntPoint Dist = TargetChunk - ChunkNow;
 	return (FMath::Abs(Dist.X) <= ChunkRadius && FMath::Abs(Dist.Y) <= ChunkRadius);
+}
+bool ALandscapeManager::IsChunkInRad(const FIntPoint& ChunkNow, const FIntPoint& TargetChunk, const int32& BoxRadius)
+{
+	FIntPoint Dist = TargetChunk - ChunkNow;
+	return (FMath::Abs(Dist.X) <= BoxRadius && FMath::Abs(Dist.Y) <= BoxRadius);
 }
 
 USplineComponent* ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path)
@@ -617,4 +625,21 @@ bool ALandscapeManager::ShouldDoWork(const FIntPoint& ChunkNow)
 	}
 
 	return false;
+}
+
+
+// Infinite pathfinding. maybe we should use a dedicated thread.
+// do one way first.
+
+// first we need to figure out if we are close to the goal.
+// that is if we are in a cerain proximity of the goal.
+bool ALandscapeManager::ShouldUpdateGoal(const FIntPoint& ChunkNow)
+{
+	return IsChunkInRad(ChunkNow, GetChunk(End), ChunkRadius * 2);
+}
+
+void ALandscapeManager::UpdateGoal()
+{
+	// just add ChunkRad*2 for now.
+	this->End += FIntPoint(ChunkRadius * 2 * (VerticesPerChunk-1), 0);
 }
