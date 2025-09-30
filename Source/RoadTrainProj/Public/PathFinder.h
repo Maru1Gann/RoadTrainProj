@@ -29,6 +29,7 @@ private:
 
     ALandscapeManager* pLM; // don't change member values!!
     float MaxSlopeTanSqr;
+    float SlopeViolationPanelty;
 
     // -----------------tools-----------------
 

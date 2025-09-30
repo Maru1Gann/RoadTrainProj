@@ -16,12 +16,15 @@
 
 struct FPerlinNoiseVariables;
 class USplineComponent;
+class FPathWorker;
 struct FChunkData;
 
 UCLASS()
 class ROADTRAINPROJ_API ALandscapeManager : public AActor
 {
     GENERATED_BODY()
+
+    friend FPathWorker;
 
 public:
     ALandscapeManager();
@@ -73,6 +76,9 @@ public:
         FIntPoint End;      // global
     UPROPERTY( EditAnywhere, Category = "Path", meta = (DisplayPriority = 3, ClampMin = "0.0", ClampMax = "100.0") )
 	    float MaxSlope = 30;
+    // SlopeViolationPanelty will be multiplied to the movecost when slope is violated.
+    UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "1.0", ClampMax = "10.0"))
+        float SlopeViolationPanelty = 2.0;
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 5, ClampMin = "0"))
         int32 CounterHardLock = 1000;
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 6))
@@ -105,8 +111,12 @@ private:
 
     float ChunkLength;
 
-    // ก้ use it only on game thread
+    // ptr for other class.
+    std::unique_ptr<FChunkBuilder> ChunkBuilder;
+    std::unique_ptr<FPathFinder> PathFinder;
 
+
+    // ก้ use it only on game thread
     bool IsPath;
     FIntPoint LastLocation;
     int32 FrameCounter;
@@ -115,21 +125,16 @@ private:
     FCriticalSection GatesMutex;
     TArray<FGate> GatePath;
     TMap<FIntPoint, TPair<FGate, FGate>> GateMap;
-
     // ก่ game thread only
 
 
     // ก้ background thread produces.
     TQueue<FChunkData, EQueueMode::Mpsc>  ChunkQueue;
     // ก่ background thread produces.
-    
-
-    std::unique_ptr<FChunkBuilder> ChunkBuilder;
 
     FRWLock RWChunksMutex;
     TMap<FIntPoint, ARealtimeMeshActor*> Chunks;
 
-    std::unique_ptr<FPathFinder> PathFinder;
 
     // write only at beginplay. (or onconstruction )
     TArray<FIntPoint> ChunkOrder;
@@ -144,7 +149,7 @@ private:
     void MakeRoad(USplineComponent* Spline);
 
     FVector GetPlayerLocation();
-    void UpdateGateMap();
+    void UpdateGateMap(const int32& StartIndex = 0);
 
    
     // async related below
@@ -173,6 +178,10 @@ private:
 
     // inf pathfinding stuffs
 
+    std::unique_ptr<FPathWorker> PathWorker;
+    bool UpdatedGoal = false;
+
+    void TryUpdatingGoal(const FIntPoint& ChunkNow);
     bool ShouldUpdateGoal(const FIntPoint& ChunkNow);
     void UpdateGoal();
 
@@ -192,3 +201,29 @@ struct FChunkData // dataset for queue.
 };
 
 
+class FPathWorker : public FRunnable
+{
+
+public:
+    FPathWorker(ALandscapeManager* pLM) {
+        this->pLM = pLM;
+        this->Thread = FRunnableThread::Create(this, TEXT("PathWorkerThread"));
+    };
+    ~FPathWorker();
+
+private:
+
+    virtual bool Init() override;
+    virtual uint32 Run() override;
+    virtual void Exit() override;
+    //virtual void Stop() override;
+
+    
+    FRunnableThread* Thread;
+    bool bShutdown = false;
+
+    ALandscapeManager* pLM;
+    FIntPoint Start;
+    FIntPoint End;
+
+};

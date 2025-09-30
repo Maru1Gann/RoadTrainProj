@@ -11,6 +11,7 @@ const FIntPoint NoConnection(-100, -100);
 FPathFinder::FPathFinder( ALandscapeManager* pLM ) : pLM( pLM )
 {
 	MaxSlopeTanSqr = FMath::Square(pLM->MaxSlope / 100.f);
+	SlopeViolationPanelty = pLM->SlopeViolationPanelty;
 }
 
 // temporary struct for pathfinding.
@@ -308,14 +309,17 @@ void FPathFinder::GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, 
 			for (auto& Neighbor : NeighborsTemp)
 			{
 				if ( !IsInBoundary(Neighbor)
-					&& !OutGates.Contains( GetChunk( LocalToGlobal( Chunk, Neighbor ) ) )
-					&& GetTanSqr(Chunk, Current, Neighbor) <= MaxSlopeTanSqr)
+					/*&& !OutGates.Contains( GetChunk( LocalToGlobal( Chunk, Neighbor ) ) ) */
+					/*&& GetTanSqr(Chunk, Current, Neighbor) <= MaxSlopeTanSqr*/ )
 				{
 					// out of boundary (gate) && Not a already found gate && slope traversable
 					// this fills outgates with gates that are found first. so if already found, no need to update.
 					// Total Cost + To Next Cost + Heuristic
-					float FCost = NodeNow.GCost + GetMoveCost(Chunk, Current, Neighbor) + GetMoveCost(Chunk, Neighbor, Goal);
-					Edges.Add(TPair<FIntPoint, float>(Neighbor, FCost));
+					float MoveCost = GetMoveCost(Chunk, Current, Neighbor);
+					if (GetTanSqr(Chunk, Current, Neighbor) > MaxSlopeTanSqr) MoveCost *= 2;
+
+					float GCost = NodeNow.GCost + MoveCost;
+					Edges.Add(TPair<FIntPoint, float>(Neighbor, GCost));
 				}
 			}
 
@@ -328,12 +332,27 @@ void FPathFinder::GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, 
 
 				FGate GlobalGate = FGate(LocalToGlobal(Chunk, Current), LocalToGlobal(Chunk, Edge.Key));
 				FIntPoint NextChunk = GetChunk(GlobalGate.B);
-				float GCost = NodeNow.GCost + GetGlobalMoveCost(GlobalGate.A, GlobalGate.B);
+				const float& GCost = Edge.Value;
+
+				TPair<FGate, float> NewOutPut(GlobalGate, GCost);
 
 				TPair<FGate, float>* OldGate = OutGates.Find(NextChunk);
-				OutGates.Add(NextChunk, TPair<FGate, float>(GlobalGate, GCost));
+				if (OldGate)
+				{
+					const float& OldGCost = (*OldGate).Value;
+					float OldFCost = OldGCost + GetGlobalMoveCost((*OldGate).Key.B, GlobalGoal);
+					float NewFCost = GCost + GetGlobalMoveCost(NewOutPut.Key.B, GlobalGoal);
+
+					if (OldFCost > NewFCost + 0.1f) OutGates.Add(NextChunk, NewOutPut);
+				}
+				else
+				{
+					OutGates.Add(NextChunk, NewOutPut);
+				}
+
 			}
-		}
+
+		} // end of if is on boundary.
 
 		// ----------------if all gates are found----------------
 		if (OutGates.Num() >= 8) {
@@ -355,66 +374,70 @@ void FPathFinder::GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, 
 		}
 
 
-			// ---------if didn't meet goal---------
-			TArray<FIntPoint> Neighbors;
-			GetNeighbors(Current, Neighbors);
-			for (auto& Neighbor : Neighbors)
+		// ---------if didn't meet goal---------
+		TArray<FIntPoint> Neighbors;
+		GetNeighbors(Current, Neighbors);
+		for (auto& Neighbor : Neighbors)
+		{
+
+			// continue if blocked (Check slope)
+			if (!IsInBoundary(Neighbor))
 			{
-
-				// continue if blocked (Check slope)
-				if (!IsInBoundary(Neighbor) || GetTanSqr(Chunk, Current, Neighbor) > MaxSlopeTanSqr)
-				{
-					continue;
-				}
-
-				// continue if 'visited && lower cost'
-				float NewCost = NodeNow.GCost + GetMoveCost(Chunk, Current, Neighbor);
-				if (Visited[GetFlatIndex(Neighbor)] == true
-					&&
-					Frontier[GetFlatIndex(Neighbor)].GCost <= NewCost + 0.01) // add to ignore irrelavent difference
-				{
-					continue;
-				}
-
-				float Heuristic = GetMoveCost(Chunk, Neighbor, Goal);
-				FNode& NodeNext = Frontier[GetFlatIndex(Neighbor)];
-				NodeNext.GCost = NewCost;
-				NodeNext.FCost = NewCost + Heuristic;
-				NodeNext.CameFrom = Current;
-				Visited[GetFlatIndex(Neighbor)] = true; // visited.
-
-				// add this to open list
-				if (!NodeNext.IsOpen)
-				{
-					Frontier[GetFlatIndex(OpenListEnd)].Next = Neighbor;
-					NodeNext.Prev = OpenListEnd;
-					NodeNext.Next = NoConnection;
-					NodeNext.IsOpen = true;
-					OpenListEnd = Neighbor;
-				}
+				continue;
 			}
 
-			// update list start and end
-			if (OpenListStart == Current)
+			// multiply movecost if slope violated.
+			float MoveCost = GetMoveCost(Chunk, Current, Neighbor);
+			if (GetTanSqr(Chunk, Current, Neighbor) > MaxSlopeTanSqr) MoveCost *= SlopeViolationPanelty;
+
+			// continue if 'visited && lower cost'
+			float NewCost = NodeNow.GCost + MoveCost;
+			if (Visited[GetFlatIndex(Neighbor)] == true
+				&&
+				Frontier[GetFlatIndex(Neighbor)].GCost <= NewCost + 0.01) // add to ignore irrelavent difference
 			{
-				OpenListStart = NodeNow.Next;
+				continue;
 			}
-			if (OpenListEnd == Current)
+
+			float Heuristic = GetMoveCost(Chunk, Neighbor, Goal);
+			FNode& NodeNext = Frontier[GetFlatIndex(Neighbor)];
+			NodeNext.GCost = NewCost;
+			NodeNext.FCost = NewCost + Heuristic;
+			NodeNext.CameFrom = Current;
+			Visited[GetFlatIndex(Neighbor)] = true; // visited.
+
+			// add this to open list
+			if (!NodeNext.IsOpen)
 			{
-				OpenListEnd = NodeNow.Prev;
+				Frontier[GetFlatIndex(OpenListEnd)].Next = Neighbor;
+				NodeNext.Prev = OpenListEnd;
+				NodeNext.Next = NoConnection;
+				NodeNext.IsOpen = true;
+				OpenListEnd = Neighbor;
 			}
-			// remove current from open list.
-			NodeNow.IsOpen = false;
-			if (NodeNow.Prev != NoConnection)
-			{
-				FNode& PrevNode = Frontier[GetFlatIndex(NodeNow.Prev)];
-				PrevNode.Next = NodeNow.Next;
-			}
-			if (NodeNow.Next != NoConnection)
-			{
-				FNode& NextNode = Frontier[GetFlatIndex(NodeNow.Next)];
-				NextNode.Prev = NodeNow.Prev;
-			}
+		}
+
+		// update list start and end
+		if (OpenListStart == Current)
+		{
+			OpenListStart = NodeNow.Next;
+		}
+		if (OpenListEnd == Current)
+		{
+			OpenListEnd = NodeNow.Prev;
+		}
+		// remove current from open list.
+		NodeNow.IsOpen = false;
+		if (NodeNow.Prev != NoConnection)
+		{
+			FNode& PrevNode = Frontier[GetFlatIndex(NodeNow.Prev)];
+			PrevNode.Next = NodeNow.Next;
+		}
+		if (NodeNow.Next != NoConnection)
+		{
+			FNode& NextNode = Frontier[GetFlatIndex(NodeNow.Next)];
+			NextNode.Prev = NodeNow.Prev;
+		}
 
 
 	} // while end.
@@ -556,13 +579,17 @@ bool FPathFinder::GetPath(const FGate& StartGate, const FGate& EndGate, TArray<F
 		{
 
 			// continue if blocked (Check slope)
-			if ( !IsInBoundary(Neighbor) || GetTanSqr(Chunk, Current, Neighbor) > MaxSlopeTanSqr )
+			if ( !IsInBoundary(Neighbor) )
 			{
 				continue;
 			}
 
+			// multiply movecost if slope violated.
+			float MoveCost = GetMoveCost(Chunk, Current, Neighbor);
+			if (GetTanSqr(Chunk, Current, Neighbor) > MaxSlopeTanSqr) MoveCost *= SlopeViolationPanelty;
+
 			// continue if 'visited && lower cost'
-			float NewCost = NodeNow.GCost + GetMoveCost(Chunk, Current, Neighbor);
+			float NewCost = NodeNow.GCost + MoveCost;
 			if (Visited[GetFlatIndex(Neighbor)] == true
 				&&
 				Frontier[GetFlatIndex(Neighbor)].GCost <= NewCost + 0.01 ) // add to ignore irrelavent difference

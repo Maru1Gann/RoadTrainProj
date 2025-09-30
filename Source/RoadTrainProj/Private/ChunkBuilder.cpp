@@ -237,7 +237,6 @@ void FChunkBuilder::GetPathStreamSetComponents(const FIntPoint& Chunk, const TAr
 		FIntPoint SGlobalGrid = Elem.Key;
 		float Height = GetHeight(FVector2D(SGlobalGrid.X, SGlobalGrid.Y) * DetailSpacing); // global value for height.
 
-
 		// --------------------Height Adjustment-------------------------- Start
 
 		// find all grid in radius that has path.
@@ -304,8 +303,10 @@ void FChunkBuilder::GetPathStreamSetComponents(const FIntPoint& Chunk, const TAr
 			IndexHeight.Key = Index++;
 			// set UVs.
 			FVector2DHalf UV;
-			UV.X = SGlobalGrid.X * UVScale;
-			UV.Y = SGlobalGrid.Y * UVScale;
+			FIntPoint SLocalGrid = SGlobalGrid - Chunk * (VerticesPerChunk-1) * DetailCount;
+			UV.X = SLocalGrid.X * UVScale;
+			UV.Y = SLocalGrid.Y * UVScale;
+
 			UVs.Add(UV);
 		}
 
@@ -557,8 +558,12 @@ void FChunkBuilder::GetUVs(const FIntPoint& Chunk, const int32& StartIndex, cons
 		for( int32 iX = StartIndex; iX < EndIndex; iX++ )
 		{
 			FVector2DHalf UV; // Mark startpoint of every uv tile
-			UV.X = ( Chunk.X * (VertexCount - 1) + iX ) * UVscale;
-			UV.Y = ( Chunk.Y * (VertexCount - 1) + iY ) * UVscale;
+			//UV.X = ( Chunk.X * (VertexCount - 1) + iX ) * UVscale;
+			//UV.Y = ( Chunk.Y * (VertexCount - 1) + iY ) * UVscale;
+			UV.X = ( (VertexCount - 1) + iX ) * UVscale;
+			UV.Y = ( (VertexCount - 1) + iY ) * UVscale;
+
+
 
 			OutUVs.Add( UV );
 		}

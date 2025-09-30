@@ -53,6 +53,7 @@ void ALandscapeManager::Tick(float DeltaTime)
 		FIntPoint ChunkNow = GetChunk(GetPlayerLocation());
 		if (ShouldDoWork(ChunkNow))
 		{
+			TryUpdatingGoal(ChunkNow);
 			AsyncWork(ChunkNow);
 		}
 
@@ -83,17 +84,17 @@ void ALandscapeManager::BeginPlay()
 	GatePath.Empty();
 	GateMap.Empty();
 
-	LastLocation = GetChunk(GetPlayerLocation()) + FIntPoint(-100, -100);
+	FIntPoint PlayerChunk = GetChunk(GetPlayerLocation());
+	LastLocation = PlayerChunk + FIntPoint(-100, -100);
+
+	UE_LOG(LogTemp, Warning, TEXT("Overriding Start and End on BeginPlay"));
+	Start = ( PlayerChunk - FIntPoint(ChunkRadius * 2, PlayerChunk.Y) ) * (VerticesPerChunk-1);
+	End = (PlayerChunk + FIntPoint(ChunkRadius * 2, PlayerChunk.Y)) * (VerticesPerChunk - 1);
 
 	IsPath = PathFinder->GetGatePath(Start, End, GatePath);
-	if (!IsPath)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("No Path Error"));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("GatePathNum %d"), GatePath.Num());
-	}
+	if (!IsPath) { UE_LOG(LogTemp, Warning, TEXT("No Path Error")); }
+	else { UE_LOG(LogTemp, Warning, TEXT("GatePathNum %d"), GatePath.Num()); }
+
 
 	UpdateGateMap();
 	UE_LOG(LogTemp, Warning, TEXT("GateMapNum %d"), GateMap.Num() );
@@ -442,10 +443,9 @@ FVector ALandscapeManager::GetPlayerLocation()
 		return FVector(0.f, 0.f, 0.f);
 }
 
-void ALandscapeManager::UpdateGateMap()
+void ALandscapeManager::UpdateGateMap(const int32& StartIndex)
 {
-	GateMap.Empty();
-	for (int32 i = 0; i < GatePath.Num() - 1; i++)
+	for (int32 i = StartIndex; i < GatePath.Num() - 1; i++)
 	{
 		FIntPoint Chunk = GetChunk(GatePath[i].B);
 		GateMap.Add(Chunk, TPair<FGate,FGate>(GatePath[i], GatePath[i + 1]));
@@ -631,8 +631,24 @@ bool ALandscapeManager::ShouldDoWork(const FIntPoint& ChunkNow)
 // Infinite pathfinding. maybe we should use a dedicated thread.
 // do one way first.
 
-// first we need to figure out if we are close to the goal.
-// that is if we are in a cerain proximity of the goal.
+
+void ALandscapeManager::TryUpdatingGoal(const FIntPoint& ChunkNow)
+{
+
+	if (ShouldUpdateGoal(ChunkNow))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Attempting to Update Goal"));
+		UpdateGoal();
+	}
+	if (UpdatedGoal)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Goal Updated!"));
+		PathWorker.reset();
+		UpdatedGoal = false;
+	}
+
+}
+
 bool ALandscapeManager::ShouldUpdateGoal(const FIntPoint& ChunkNow)
 {
 	return IsChunkInRad(ChunkNow, GetChunk(End), ChunkRadius * 2);
@@ -640,6 +656,66 @@ bool ALandscapeManager::ShouldUpdateGoal(const FIntPoint& ChunkNow)
 
 void ALandscapeManager::UpdateGoal()
 {
-	// just add ChunkRad*2 for now.
-	this->End += FIntPoint(ChunkRadius * 2 * (VerticesPerChunk-1), 0);
+	PathWorker = std::make_unique<FPathWorker>(this);
+}
+
+
+// --------------pathworker.
+
+bool FPathWorker::Init()
+{
+	if (!pLM) return false;
+
+	if (pLM->GatePath.Num() - 2 < 0) return false;
+
+	this->Start = pLM->GatePath[pLM->GatePath.Num() - 2].B; // Last one is goal, so -1. Last gate is our start.
+	this->End = pLM->GatePath.Last().A + FIntPoint(pLM->ChunkRadius * 2 * (pLM->VerticesPerChunk - 1), 0);
+	return true;
+}
+
+uint32 FPathWorker::Run()
+{
+	TArray<FGate> NewGatePath;
+	bool Success = pLM->PathFinder->GetGatePath(Start, End, NewGatePath);
+	if (!Success)
+	{
+		UE_LOG(LogTemp, Error, TEXT("INF Path Calc Error. Abort"));
+		return 0;
+	}
+
+	
+	{	// scopelock
+
+		FScopeLock Lock(&pLM->GatesMutex);
+
+		int32 LastIndex = pLM->GatePath.Num() - 1;
+		// remove last element. (goal).
+		pLM->GatePath.RemoveAt(LastIndex--);
+		// set first. (gate to prev goal chunk).
+		NewGatePath[0] = pLM->GatePath.Last();
+		// remove last element. ( gate to prev goal chunk )
+		pLM->GatePath.RemoveAt(LastIndex--);
+		pLM->GatePath.Append(NewGatePath);
+		pLM->End = this->End;
+		pLM->UpdateGateMap(LastIndex);
+
+	}	// scopelock
+
+	return uint32(0); // success
+}
+
+void FPathWorker::Exit()
+{
+	pLM->UpdatedGoal = true;
+}
+
+FPathWorker::~FPathWorker()
+{
+	if (Thread)
+	{
+		Thread->Kill(true);
+		delete Thread;
+		Thread = nullptr;
+	}
+
 }
