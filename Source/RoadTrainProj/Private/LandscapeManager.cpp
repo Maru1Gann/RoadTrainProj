@@ -1,520 +1,524 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 
 #include "LandscapeManager.h"
+#include "PerlinNoiseVariables.h"
 
-#include "ProceduralMeshComponent.h"		// FProcMeshTangent
-#include "KismetProceduralMeshLibrary.h"	// Procedural Mesh Component
-#include "Kismet/KismetSystemLibrary.h"		// Drawing Debug Stuffs
-#include "Kismet/GameplayStatics.h"			// UGameplayStatics::GetPlayerCharacter(this, 0);
-#include "GameFramework/Character.h"		// ACharacter
-#include "Math/UnrealMathUtility.h"			// FMath::PerlinNoise2D
+#include "Components/SplineComponent.h" // Spline
+#include "Components/SplineMeshComponent.h" // Spline Mesh
 
+#include "DrawDebugHelpers.h"
 
-// Sets default values
 ALandscapeManager::ALandscapeManager()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bCanEverTick = true; // enable tick
+    RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root")); // cannot see actor in editor bug fix
 
-	ProceduralMeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProceduralMesh"));
-	RootComponent = ProceduralMeshComponent;
+	Material = nullptr;
+	RoadMesh = nullptr;
+	IsPath = false;
+	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
 
-	Triangles.Empty();
-	BigTriangles.Empty();
+	FrameCounter = 0;
+	ShouldWorkCounter = 0;
 
-	AsyncInfoTask = new FAsyncTask<FLandscapeInfoGenerator>(this);
+	UpdateDelayFrames = 2;
+	DoWorkFrame = 3;
+
+	UseAsync = true;
+
+	CoverageRadius = 3;
+	DetailCount = 5;
+
+	RoadScale = FVector2D(2.0f, 5.0f);
 }
 
-// Called when the game starts or when spawned
-void ALandscapeManager::BeginPlay()
+void ALandscapeManager::OnConstruction(const FTransform& Transform)
 {
-	Super::BeginPlay();
-	
-	// get player reference
-	PlayerCharacter = UGameplayStatics::GetPlayerCharacter(this, 0);
-	if(PlayerCharacter == nullptr)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("LandScapeManager_BeginPlay : PlayerCharacter nullptr"));
-	}
+	Super::OnConstruction(Transform);
 
-	// Initial actions.
+	GetChunkOrder(ChunkRadius, ChunkOrder);
+	GetChunkOrder(ChunkRadius + 1, BigChunkOrder);
 
-	GenerateChunkOrder(this->RadiusByChunkCount);
+	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
 
-	GenerateLandscape();
-
-
-	// Setting Timers
-
-
-	// ↓ Version without multithreading
-	
-	if( ShouldUseMultithreading == false )
-	{
-
-		GetWorldTimerManager().SetTimer(
-			ChunkUpdateTimerHandle, 
-			this, 
-			&ALandscapeManager::UpdateLandscape,
-			ChunkUpdatePeriod,
-			true,
-			0.01f
-		);
-
-	}
-	else // With Multithreading ↓
-	{
-		
-
-		// Info Generation task
-		GetWorldTimerManager().SetTimer(
-			AsyncChunkInfoUpdateTimerHandle,
-			this,
-			&ALandscapeManager::UpdateChunkInfoAsync,
-			AsyncChunkInfoUpdatePeriod,
-			true,
-			0.01f
-		);
-
-		// Chunk Updating task (MainThread)d
-		GetWorldTimerManager().SetTimer(
-			AsyncChunkUpdateTimerHandle,
-			this,
-			&ALandscapeManager::UpdateLandscapeAsync,
-			AsyncChunkUpdatePeriod,
-			true,
-			0.02f
-		);
-
-
-	}	// END of else
-
-
-	return;
-
+	ChunkBuilder = std::make_unique<FChunkBuilder>(this, this->Material);
+	PathFinder = std::make_unique<FPathFinder>(this);
 }
 
-// Called every frame
 void ALandscapeManager::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	if (UseAsync)
+	{
+		FIntPoint ChunkNow = GetChunk(GetPlayerLocation());
+		if (ShouldDoWork(ChunkNow))
+		{
+			TryUpdatingGoal(ChunkNow);
+			AsyncWork(ChunkNow);
+		}
+
+		if (FrameCounter % DoWorkFrame == 0)
+		{
+			FrameCounter = 0;
+			Process(ChunkNow);
+
+		}
+		FrameCounter++;
+	}
+
 }
 
-
-
-void ALandscapeManager::UpdateLandscape()
+void ALandscapeManager::BeginPlay()
 {
+	Super::BeginPlay();
 
-	// --------Background Thread-------- START
+	// on construction.
+	GetChunkOrder(ChunkRadius, ChunkOrder);
+	GetChunkOrder(ChunkRadius + 1, BigChunkOrder);
 
-	// if ( IsChunkInfoReady == true )
-	// {
-	// 	return;
-	// }
+	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
 
-	FIntPoint PlayerLocatedChunk = GetPlayerLocatedChunk();
+	ChunkBuilder = std::make_unique<FChunkBuilder>(this, this->Material);
+	PathFinder = std::make_unique<FPathFinder>(this);
+	// on construction.
 
-	// Member variables for multithreading
-	// 		FIntPoint NeededChunk;
-	// 		TPair<FIntPoint, int32> RemovableChunk;
+	GatePath.Empty();
+	GateMap.Empty();
 
-	// NeededChunk and RemovableChunk are OutParameters
-	if( FindNeededChunk( NeededChunk, PlayerLocatedChunk ) == false || FindRemovableChunk( RemovableChunk, PlayerLocatedChunk ) == false )
-	{
-		return;
-	}
+	FIntPoint PlayerChunk = GetChunk(GetPlayerLocation());
+	LastLocation = PlayerChunk + FIntPoint(-100, -100);
 
-	GenerateChunkInfo(NeededChunk);
+	UE_LOG(LogTemp, Warning, TEXT("Overriding Start and End on BeginPlay"));
+	Start = ( PlayerChunk - FIntPoint(ChunkRadius * 4, PlayerChunk.Y) ) * (VerticesPerChunk-1);
+	End = (PlayerChunk + FIntPoint(ChunkRadius * 4, PlayerChunk.Y)) * (VerticesPerChunk - 1);
 
-	// IsChunkInfoReady = true;
+	IsPath = PathFinder->GetGatePath(Start, End, GatePath);
+	if (!IsPath) { UE_LOG(LogTemp, Warning, TEXT("No Path Error")); }
+	else { UE_LOG(LogTemp, Warning, TEXT("GatePathNum %d"), GatePath.Num()); }
 
-	// --------Background Thread-------- END
 
-	// if( IsChunkInfoReady == false )
-	// {
-	// 	return;
-	// }
-	
+	UpdateGateMap();
+	UE_LOG(LogTemp, Warning, TEXT("GateMapNum %d"), GateMap.Num() );
 
-	UpdateSingleChunk(RemovableChunk.Value);
-
-	ChunkStatus.Remove(RemovableChunk.Key);
-	ChunkStatus.Add(NeededChunk, RemovableChunk.Value);
-	
-	// fixes bad collision issues
-	ProceduralMeshComponent->ClearCollisionConvexMeshes();
-
-	// IsChunkInfoReady = false;
-
-	UE_LOG(LogTemp, Display, TEXT("(%d, %d) : Landscape Updated"), NeededChunk.X, NeededChunk.Y);
-
-	return;
 }
 
-
-void ALandscapeManager::UpdateChunkInfoAsync()
-{
-	if ( IsChunkInfoGenerating == true )
-	{
-		UE_LOG(LogTemp, Display, TEXT("MultiThreading flag hit : ChunkInfo still Generating"));
-		return;
-	}
-	
-	if ( IsChunkInfoReady == true )
-	{
-		return;
-	}
-
-	// Check DoWork() at bottom
-	
-	if( AsyncInfoTask->IsDone() )
-	{
-		AsyncInfoTask->EnsureCompletion();
-		AsyncInfoTask->StartBackgroundTask();
-	}
-	else
-	{
-		//UE_LOG(LogTemp, Display, TEXT(" AsyncTask still running "));
-	}
-	
-
-	// when task done ↓
-	// IsChunkInfoGenerating 	set to false in DoWork()
-	// IsChunkInfoReady 		set to true in DoWork()
-
-	return;
-}
-
-void ALandscapeManager::UpdateLandscapeAsync()
-{
-	if ( IsChunkInfoGenerating == true )
-	{
-		UE_LOG(LogTemp, Display, TEXT("Main Thread flag hit : ChunkInfo still generating"));
-		return;
-	}
-
-	if( IsChunkInfoReady == false )
-	{
-		return;
-	}
-
-
-	UpdateSingleChunk(RemovableChunk.Value);
-
-	ChunkStatus.Remove(RemovableChunk.Key);
-	ChunkStatus.Add(NeededChunk, RemovableChunk.Value);
-	
-	// fixes bad collision issues
-	ProceduralMeshComponent->ClearCollisionConvexMeshes();
-
-	UE_LOG(LogTemp, Display, TEXT("(%d, %d) : Chunk Updated"), NeededChunk.X, NeededChunk.Y);
-
-	IsChunkInfoReady = false;
-
-
-	return;
-}
-
-
-// Editor Callable Functions
-// Call this only once in Beginplay.
 void ALandscapeManager::GenerateLandscape()
 {
+	RemoveLandscape();
 
-	FlushForEditor();
-
-	GenerateChunkOrder(this->RadiusByChunkCount);
-
-	for ( int i = 0; i < ChunkOrder.Num(); i++ )
+	TArray<FVector> EmptyArray;
+	EmptyArray.Empty();
+	for (auto& Elem : ChunkOrder)
 	{
-		GenerateChunkInfo( ChunkOrder[i] );
-		DrawSingleChunk( ChunkOrder[i] );
+		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+		ChunkBuilder->GetStreamSet(Elem, EmptyArray, StreamSet);
+		AddChunk(Elem, StreamSet);
+	}
+}
+
+void ALandscapeManager::GenerateLandscapeWithPath()
+{
+	RemoveLandscape();
+
+	GatePath.Empty();
+	PathFinder->GetGatePath(Start, End, GatePath);
+	UpdateGateMap();
+
+	for (auto& Chunk : ChunkOrder)
+	{
+		TArray<FVector> Paths;
+		TArray<FVector> PathForSpline;
+
+		for (int32 j = -1; j <= 1; j++)
+			for (int32 i = -1; i <= 1; i++)
+			{
+				FIntPoint Target = Chunk + FIntPoint(i,j);
+				TPair<FGate, FGate>* FoundGates = GateMap.Find(Target);
+				if (FoundGates)
+				{
+					TArray<FVector> TempPath;
+					FGate GateA = (*FoundGates).Key;
+					FGate GateB = (*FoundGates).Value;
+
+					PathFinder->GetActualPath(GateA, GateB, TempPath);
+					if (i == 0 && j == 0) PathForSpline = TempPath;
+					Paths.Append(TempPath);
+				}
+			}
+
+		RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+		ChunkBuilder->GetStreamSet(Chunk, Paths, StreamSet);
+		AddChunk(Chunk, StreamSet);
+
+		if (!PathForSpline.IsEmpty())
+		{
+			USplineComponent* pSpline = AddPathSpline(Chunk, PathForSpline);
+			if(pSpline) MakeRoad(pSpline);
+			PathForSpline.Empty();
+		}
 	}
 
-	return;
-}
-
-void ALandscapeManager::FlushForEditor()
-{
-	ProceduralMeshComponent->ClearAllMeshSections();
-	FlushPersistentDebugLines(this->GetWorld());
-
-	BigTriangles.Empty();
-	Triangles.Empty();
-
-	Vertices.Empty();
-	Normals.Empty();
-	UVs.Empty();
-	Tangents.Empty();
-
-	ChunkSectionIndex = 0;
-
-	return;
 }
 
 
-void ALandscapeManager::RemoveDebugPoints()
+void ALandscapeManager::RemoveLandscape()
 {
-	FlushPersistentDebugLines(this->GetWorld());
+	FlushPersistentDebugLines(GetWorld());
 
-	return;
+	TSet<FIntPoint> RemoveSet;
+	for (auto& Elem : Chunks) RemoveSet.Add(Elem.Key);
+	for (auto& Elem : RemoveSet) RemoveChunk(Elem);
+
+	Chunks.Empty();
 }
 
-// Editor Callable Functions
-
-/* 	Private 
-	Section 
-	From HERE ↓
-*/
-
-
-void ALandscapeManager::GenerateChunkInfo(const FIntPoint ChunkCoord)
+void ALandscapeManager::Debug()
 {
+	FlushPersistentDebugLines(GetWorld());
 
-	// Clear TArrays.
-	ResetChunkInfo();
-
-	// Offset is ChunkCoordination * ChunkVertexCount * CellSize
-	FVector Offset = 
-		FVector(	ChunkCoord.X * (ChunkVertexCount.X - 1), 
-					ChunkCoord.Y * (ChunkVertexCount.Y - 1), 
-					0.f);
-	Offset = Offset * CellSize;
+	TMap<FIntPoint, TPair<FGate, float>> Gates;
+	PathFinder->GetGates(FGate(Start), Start, Gates, true);
 	
-	// First we need to make a chunk that is one vertice bigger on every side. -> length + 2
-	// This is because we need to make normals that continues to another chunk.
-	// else we get seams at the edge of every chunk.
-
-	// Declarations
-	TArray<FVector> BigVertices;
-	FVector Vertex;
-
-	TArray<FVector2D> BigUVs;
-	FVector2D UV;
-
-
-	// Calculations for BigVertices. BigUVs also since it's same.
-	for (int32 iY = -1;  iY <= ChunkVertexCount.Y; iY++) // this goes from -1 ~ (length + 1) == length + 2
-	{
-		for (int32 iX = -1; iX <= ChunkVertexCount.X;  iX++)
-		{
-			// getting the actual vertex coordinates in worldspace
-			Vertex = FVector( iX, iY, 0.f ) * CellSize + Offset; 
-
-			// PerlinNoise Based Height Generation.
-			if( ShouldUseHeightGeneration )
-			{
-				Vertex.Z = GenerateHeight(FVector2D(Vertex));
-			}
-			
-
-			BigVertices.Add(Vertex);
-			UV = FVector2D(Vertex) / CellSize; // convert to FVector2D
-			BigUVs.Add(UV);	
-		}
-	}
-
-	// BigTriangles are just abstract coordinates, it should go from 0 to ChunkVertexCount + 1 ( == -1 to ChunkVertexCount )
-	// !!We don't use the last vertex as startingpoint!! So (ChunkVertexCount + 1) - 1
-
-
-	int32 Row = ChunkVertexCount.X + 2;
-	// make triangles only if it's empty. Since they are always same. No need to make it twice.
-	if( BigTriangles.IsEmpty() )
-	{
-
-		for (int32 iY = 0; iY <= ChunkVertexCount.Y; iY++)
-		{
-			for (int32 iX = 0; iX <= ChunkVertexCount.X; iX++)
-			{
-				// counter-clockwise, mark 3 vertices for triangle generation.
-				// NOTE : in UnrealEngine, positive Y goes DOWN!!
-				// so { (x,y), (x, y+1), (x+1, y+1) }, { (x,y), (x+1, y+1), (x+1, y) } makes square facing upwards.
-	
-				// Column = iY * Row;
-				BigTriangles.Add( iX 		+ (iY * Row) 		);
-				BigTriangles.Add( iX 		+ ((iY+1) * Row) 	);
-				BigTriangles.Add( (iX+1) 	+ ((iY+1) * Row) 	);
-	
-				BigTriangles.Add( iX 		+ (iY * Row) 		);
-				BigTriangles.Add( (iX+1)	+ ((iY+1) * Row) 	);
-				BigTriangles.Add( (iX+1) 	+ (iY * Row) 		);
-			}
-		}
-
-	}
-
-
-	// With Vertices, Triangles, UVs, we calculate Normals and Tangents.
-	TArray<FVector> BigNormals;
-	TArray<FProcMeshTangent> BigTangents;
-	// Normal & Tangent is OutParameter of function below!!
-	UKismetProceduralMeshLibrary::CalculateTangentsForMesh(BigVertices, BigTriangles, BigUVs, BigNormals, BigTangents);
-
-	// Now let's generate real infos for CreateMeshSection function.
-	// Triangles should be dealt separately.
-	int32 VertexIndex = 0;
-	for (int32 iY = -1; iY <= ChunkVertexCount.Y; iY++)
-	{
-		for (int32 iX = -1; iX <= ChunkVertexCount.X; iX++)
-		{
-			if ( iX > -1 && iY > -1 && iX < ChunkVertexCount.X && iY < ChunkVertexCount.Y ) // we remove 1 from every side of the square;
-			{
-				Vertices.Add( BigVertices[VertexIndex] );
-				Normals.Add( BigNormals[VertexIndex] );
-				UVs.Add( BigUVs[VertexIndex] );
-				Tangents.Add( BigTangents[VertexIndex] );
-			}
-			VertexIndex++;
-		}
-	}
-
-
-	// Triangles
-	// we don't use the last vertex. so CunkVertexCount - 1.
-	// starts from 0 so ChunkVertexCount - 1.
-	// Only make once. Same as BigTriangles.
-
-	if ( Triangles.IsEmpty() )
-	{
-
-		Row = ChunkVertexCount.X;
-		for (int32 iY = 0; iY <= ChunkVertexCount.Y - 2; iY++)
-		{
-			for (int32 iX = 0; iX <= ChunkVertexCount.X - 2; iX++)
-			{
-				Triangles.Add( iX 		+ (iY * Row) 		);
-				Triangles.Add( iX 		+ ((iY+1) * Row) 	);
-				Triangles.Add( (iX+1) 	+ ((iY+1) * Row) 	);
-
-				Triangles.Add( iX 		+ (iY * Row) 		);
-				Triangles.Add( (iX+1) 	+ ((iY+1) * Row) 	);
-				Triangles.Add( (iX+1)	+ (iY * Row) 		);
-			}
-		}
-
-	}
-
-
-	UE_LOG(LogTemp, Display, TEXT("(%d, %d) : Generated Chunk Info"), ChunkCoord.X, ChunkCoord.Y);
-	return;
 }
 
-void ALandscapeManager::GenerateChunkOrder(const int RadiusByCount)
+
+TArray<USplineComponent*> ALandscapeManager::GetNearSplines()
 {
-	// This function never needs to be called more than once!
-	// Unless the variables have changed. (when called in editor)
+	TArray<USplineComponent*> NearSplines;
 
-	ChunkOrder.Empty();
+	FIntPoint ChunkNow = GetChunk(GetPlayerLocation());
+
+	FRWScopeLock Lock(RWGatesMutex, FRWScopeLockType::SLT_ReadOnly);
+	FRWScopeLock Lock2(RWChunksMutex, FRWScopeLockType::SLT_ReadOnly);
+	for(int32 j = -1; j<=1; j++)
+		for (int32 i = -1; i <= 1; i++)
+		{
+			FIntPoint Target = ChunkNow + FIntPoint(i, j);
+			if (!GateMap.Contains(Target)) continue;
+
+			ARealtimeMeshActor** ppRMA = Chunks.Find(Target);
+			if (!ppRMA || !(*ppRMA)) continue;
+
+			USplineComponent* pSpline = (*ppRMA)->GetComponentByClass<USplineComponent>();
+			if (pSpline) NearSplines.Add(pSpline);
+		}
+
+	return NearSplines;
+}
 
 
-	// we make circle with x length radius. Ignore Y Length.
-	float RadiusByLength = RadiusByCount * ( (ChunkVertexCount.X - 1) * CellSize );
+
+float ALandscapeManager::GetHeight( const FVector2D& Location )
+{
+	return ChunkBuilder->GetHeight(Location);
+}
+
+// returns center of grid.
+FVector ALandscapeManager::GridToVector(const FIntPoint& GlobalGrid)
+{
+	FVector Out;
+	Out.X = (GlobalGrid.X + 0.5f) * VertexSpacing;
+	Out.Y = (GlobalGrid.Y + 0.5f) * VertexSpacing;
+	Out.Z = GetHeight(FVector2D(Out.X, Out.Y));
+	return Out;
+}
+
+FIntPoint ALandscapeManager::GetChunk(const FIntPoint& GlobalGrid)
+{
+	FIntPoint Chunk;
+	Chunk.X = FMath::FloorToInt32(float(GlobalGrid.X) / float(VerticesPerChunk - 1));
+	Chunk.Y = FMath::FloorToInt32(float(GlobalGrid.Y) / float(VerticesPerChunk - 1));
+	return Chunk;
+}
+
+FIntPoint ALandscapeManager::GetChunk(const FVector& Vector)
+{
+	FIntPoint Chunk;
+	Chunk.X = FMath::FloorToInt32(Vector.X / ChunkLength);
+	Chunk.Y = FMath::FloorToInt32(Vector.Y / ChunkLength);
+	return Chunk;
+}
+
+
+// private ��
+
+
+
+// Add Chunk as an Actor into the world.
+void ALandscapeManager::AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet)
+{
+
+	UWorld* pWorld = GetWorld();
+	if (!pWorld)
+	{ UE_LOG(LogTemp, Warning, TEXT("GetWorld() nullptr")); 
+	return; }
+
+	// Spawn chunk as Actor
+	ARealtimeMeshActor* pRMA = pWorld->SpawnActor<ARealtimeMeshActor>();
+	if (!pRMA)
+	{ UE_LOG(LogTemp, Warning, TEXT("RMA nullptr")); 
+	return; }
+
+	URealtimeMeshComponent* pRMC = pRMA->GetRealtimeMeshComponent();
+	if (!pRMC)
+	{ UE_LOG(LogTemp, Warning, TEXT("pRMC nullptr"));
+	return; }
+
+	URealtimeMeshSimple* RealtimeMesh = pRMC->InitializeRealtimeMesh<URealtimeMeshSimple>();
+	if (!RealtimeMesh)
+	{ UE_LOG(LogTemp, Warning, TEXT("RealtimeMesh nullptr"));
+	return; }
+
+
+	// Set Location
+	FVector Offset = FVector( Chunk.X , Chunk.Y, 0.0f ) * ChunkLength;
+	pRMA->SetActorLocation(Offset);
+
+	// Set MaterialSlot
+	RealtimeMesh->SetupMaterialSlot(0, "PrimaryMaterial");
+	RealtimeMesh->UpdateLODConfig(0, FRealtimeMeshLODConfig(1.00f));
+
+	const FRealtimeMeshSectionGroupKey GroupKey = FRealtimeMeshSectionGroupKey::Create(0, 0);
+	const FRealtimeMeshSectionKey PolyGroup0SectionKey = FRealtimeMeshSectionKey::CreateForPolyGroup(GroupKey, 0);
+
+	// this generates the mesh (chunk)
+	RealtimeMesh->CreateSectionGroup(GroupKey, StreamSet);
+
+	// set Mobility
+	pRMA->GetRootComponent()->SetMobility(EComponentMobility::Movable);
+
+	// set up material
+	if( Material )
+	{ pRMC->SetMaterial(0, Material); }
+
+	// add it to status (member)
+	{ // scopelock writing.
+		FRWScopeLock Lock(RWChunksMutex, FRWScopeLockType::SLT_Write);
+		Chunks.Add(Chunk, pRMA); 
+	}
+	
+
+	// update configuration.
+	RealtimeMesh->UpdateSectionConfig( PolyGroup0SectionKey, FRealtimeMeshSectionConfig(0), true );
+
+	// TODO: set collision to Query only. to specific chunks.
+}
+
+// check and remove chunk and entry from Member::Chunks TMap
+bool ALandscapeManager::RemoveChunk(const FIntPoint& Chunk)
+{
+	ARealtimeMeshActor** ppRMA = Chunks.Find(Chunk);
+	bool Destroyed = false;
+	if ( ppRMA && (*ppRMA) )
+	{
+		Destroyed = (*ppRMA)->Destroy();
+	}
+	if (Destroyed)
+	{
+		// scopelock writing.
+		FRWScopeLock Lock(RWChunksMutex, FRWScopeLockType::SLT_Write);
+		Chunks.Remove(Chunk);
+	}
+	return true;
+}
+
+// Returns 2d index of whirl. Used for chunk generation from closest point.
+// Should be called only once in OnConstruction()
+void ALandscapeManager::GetChunkOrder(const int32& ChunkRad, TArray<FIntPoint>& OutArray)
+{
+	OutArray.Empty();
+	OutArray.SetNum((ChunkRad * 2 + 1) * (ChunkRad * 2 + 1));
 
 	// we make square with chunks
 	// from the start point, we make it like a whirl
 
 	/* example
-		16	15	14	13	12
-		17	4	3	2	11
-		18	5	0	1	10
-		19	6	7	8	9
-		20	21	22	23	24
+		20	19	18	17	16
+		21	6	5	4	15
+		22	7	0	3	14
+		23	8	1	2	13
+		24	9	10	11	12
+		25	..
 
-		this goes
-		*Iterator starts from 2
-
-		one step front
-		'Iterator - 1' step upwards
-		'Iterator' step backwards
-		'Iterator' step downwards
-		'Iterator' step forwards
-		-> one square done.
-		iterator++
-		
-		add it only when it's inside radius.
+		x+ : right
+		y+ : down
 	*/
 
-	int32 Iterator = 1;
-	FIntPoint CurrentCoord = FIntPoint(0,0);
-	ChunkOrder.Add(CurrentCoord);
-
-	while ( Iterator <= RadiusByCount )
+	FIntPoint Pos = FIntPoint(0, 0);
+	int32 Index = 0;
+	OutArray[Index++] = Pos;
+	int32 LocalStep = 2;
+	while (Index < OutArray.Num())
 	{
-		int32 step = Iterator*2;
-		// one step front.
-		CurrentCoord += FIntPoint(1,0);
-		if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord, RadiusByLength) )
-			{
-				ChunkOrder.Add(CurrentCoord);
-			}
+		// one step down
+		Pos.Y++;
+		OutArray[Index++] = Pos;
 
-		// step up
-		for (int i = 0; i < step - 1; i++)
+		for (int32 i = 1; i < LocalStep; i++)
 		{
-			
-			CurrentCoord += FIntPoint(0,1);
-			if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord, RadiusByLength) )
-			{
-				ChunkOrder.Add(CurrentCoord);
-			}
+			Pos.X++;
+			OutArray[Index++] = Pos;
+		}
+		for (int32 i = 0; i < LocalStep; i++)
+		{
+			Pos.Y--;
+			OutArray[Index++] = Pos;
+		}
+		for (int32 i = 0; i < LocalStep; i++)
+		{
+			Pos.X--;
+			OutArray[Index++] = Pos;
+		}
+		for (int32 i = 0; i < LocalStep; i++)
+		{
+			Pos.Y++;
+			OutArray[Index++] = Pos;
 		}
 
-		// step back
-		for (int i = 0; i < step; i++)
-		{
-			
-			CurrentCoord += FIntPoint(-1, 0);
-			if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord, RadiusByLength) )
-			{
-				ChunkOrder.Add(CurrentCoord);
-			}
-		}
-
-		// step down
-		for (int i = 0; i < step; i++)
-		{
-
-			CurrentCoord += FIntPoint(0, -1);
-			if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord, RadiusByLength) )
-			{
-				ChunkOrder.Add(CurrentCoord);
-			}
-		}
-
-		// step forward
-		for (int i = 0; i < step; i++)
-		{
-			
-			CurrentCoord += FIntPoint(1, 0);
-			if ( IsChunkInRadius(FIntPoint(0,0), CurrentCoord, RadiusByLength) )
-			{
-				ChunkOrder.Add(CurrentCoord);
-			}
-		}
-
-
-		Iterator++;
+		LocalStep += 2;
 	}
-
 
 	return;
 }
 
-bool ALandscapeManager::FindNeededChunk(FIntPoint& OutNeededChunk, const FIntPoint ChunkCoord)
+bool ALandscapeManager::IsChunkInRad(const FIntPoint& ChunkNow, const FIntPoint& TargetChunk)
 {
-	// OutNeededChunk is OutParameter. Its value will change
+	FIntPoint Dist = TargetChunk - ChunkNow;
+	return (FMath::Abs(Dist.X) <= ChunkRadius && FMath::Abs(Dist.Y) <= ChunkRadius);
+}
+bool ALandscapeManager::IsChunkInRad(const FIntPoint& ChunkNow, const FIntPoint& TargetChunk, const int32& BoxRadius)
+{
+	FIntPoint Dist = TargetChunk - ChunkNow;
+	return (FMath::Abs(Dist.X) <= BoxRadius && FMath::Abs(Dist.Y) <= BoxRadius);
+}
 
-	FIntPoint CurrentChunk = GetPlayerLocatedChunk();
-
-	for( int i = 0; i < ChunkOrder.Num(); i++ )
+USplineComponent* ALandscapeManager::AddPathSpline(const FIntPoint& Chunk, const TArray<FVector>& Path)
+{
+	ARealtimeMeshActor** ppRMA = Chunks.Find(Chunk);
+	if (!ppRMA)
 	{
-		FIntPoint Iterator = CurrentChunk + ChunkOrder[i];
-		if( ChunkStatus.Contains( Iterator ) == false )
+		UE_LOG(LogTemp, Warning, TEXT("addPathSpline ppRMA nullptr"));
+		return nullptr;
+	}
+	ARealtimeMeshActor* pRMA = (*ppRMA);
+	if (!pRMA)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("addPathSpline pRMA nullptr"));
+		return nullptr;
+	}
+
+	USplineComponent* Spline = NewObject<USplineComponent>(pRMA); // add spline component
+	Spline->RegisterComponent(); // register to world.
+
+	Spline->SetRelativeLocation(FVector::ZeroVector);
+	Spline->ClearSplinePoints(false);
+	
+	pRMA->GetRootComponent()->SetMobility(EComponentMobility::Movable);
+	Spline->SetMobility(EComponentMobility::Movable);
+	Spline->AttachToComponent(pRMA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+
+
+	// add spline points.
+	for (auto& Pos : Path)
+	{
+		Spline->AddSplinePoint(Pos, ESplineCoordinateSpace::World);
+	}
+	
+	MakeRoad(Spline);
+	return Spline;
+}
+
+void ALandscapeManager::MakeRoad(USplineComponent* Spline)
+{
+	if(!this->RoadMesh || !Spline)
+	{ return; }
+
+	for (int32 i = 0; i < Spline->GetNumberOfSplinePoints() - 1; i++)
+	{
+		USplineMeshComponent* SplineMesh = NewObject<USplineMeshComponent>(Spline->GetOwner());
+		SplineMesh->RegisterComponent();
+		SplineMesh->SetMobility(EComponentMobility::Movable);
+		SplineMesh->AttachToComponent(Spline, FAttachmentTransformRules::KeepWorldTransform);
+		SplineMesh->SetWorldLocation(FVector::ZeroVector);
+		
+		FVector StartPos, StartTangent, EndPos, EndTangent;
+		StartPos = Spline->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::World);
+		StartTangent = Spline->GetTangentAtSplinePoint(i, ESplineCoordinateSpace::World);
+		EndPos = Spline->GetLocationAtSplinePoint(i + 1, ESplineCoordinateSpace::World);
+		EndTangent = Spline->GetTangentAtSplinePoint(i + 1, ESplineCoordinateSpace::World);
+
+
+		SplineMesh->SetStaticMesh(RoadMesh);
+		SplineMesh->SetStartAndEnd(StartPos, StartTangent, EndPos, EndTangent);
+		SplineMesh->SetStartScale(RoadScale);
+		SplineMesh->SetEndScale(RoadScale);
+		SplineMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	}
+}
+
+
+FVector ALandscapeManager::GetPlayerLocation()
+{
+	UWorld* pWord = GetWorld();
+	APlayerController* pPlayerCon = nullptr;
+	APawn* pPlayerPawn = nullptr;
+	if (pWord) pPlayerCon = pWord->GetFirstPlayerController();
+	if (pPlayerCon) pPlayerPawn = pPlayerCon->GetPawn();
+
+	if (pPlayerPawn) 
+		return pPlayerPawn->GetActorLocation();
+	else 
+		return FVector(0.f, 0.f, 0.f);
+}
+
+void ALandscapeManager::UpdateGateMap(const int32& StartIndex)
+{
+	for (int32 i = StartIndex; i < GatePath.Num() - 1; i++)
+	{
+		FIntPoint Chunk = GetChunk(GatePath[i].B);
+		GateMap.Add(Chunk, TPair<FGate,FGate>(GatePath[i], GatePath[i + 1]));
+	}
+}
+
+
+// async works below.
+
+
+// call it on game thread and it will do multithreading.
+void ALandscapeManager::AsyncWork(const FIntPoint& ChunkNow)
+{
+	if (!ChunkQueue.IsEmpty()) return;
+
+	// make datas for it ( background thread )
+	AsyncTask(ENamedThreads::AnyBackgroundHiPriTask, [this, ChunkNow]()
 		{
-			OutNeededChunk = Iterator;
+			TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap;
+			FindNearGates(ChunkNow, NearGatesMap);
+
+			TArray<FIntPoint> ChunksNeeded;
+			FindChunksNeeded(ChunkNow, ChunksNeeded);
+
+			this->UpdateDataQueue( ChunksNeeded, NearGatesMap );
+		}
+	);
+
+}
+
+// game thread work.
+void ALandscapeManager::Process(const FIntPoint& ChunkNow)
+{
+	// always remove first.
+	bool Removed = FindAndRemoveChunk(ChunkNow);
+	if(!Removed) DequeueAndAddChunk(ChunkNow);
+}
+
+bool ALandscapeManager::FindAndRemoveChunk(const FIntPoint& ChunkNow)
+{
+	for (auto& Elem : Chunks)
+	{
+		if (!IsChunkInRad(ChunkNow, Elem.Key))
+		{
+			RemoveChunk(Elem.Key);
 			return true;
 		}
 	}
@@ -522,215 +526,224 @@ bool ALandscapeManager::FindNeededChunk(FIntPoint& OutNeededChunk, const FIntPoi
 	return false;
 }
 
-bool ALandscapeManager::FindRemovableChunk(TPair<FIntPoint, int32>& OutRemovableChunk, const FIntPoint ChunkCoord)
+bool ALandscapeManager::DequeueAndAddChunk(const FIntPoint& ChunkNow)
 {
-	// OutSectionIndex is Out Parameter.
 
-	float RadiusByLength = RadiusByChunkCount * ( (ChunkVertexCount.X - 1) * CellSize );
-
-	for ( auto& Elem : ChunkStatus )
+	while (!ChunkQueue.IsEmpty())
 	{
-		if( IsChunkInRadius(ChunkCoord, Elem.Key, RadiusByLength ) == false )
+		FChunkData ChunkData;
+		ChunkQueue.Dequeue(ChunkData);
+		const FIntPoint& Chunk = ChunkData.Chunk;
+		const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet = ChunkData.StreamSet;
+		const TArray<FVector> Path = ChunkData.ActualPath;
+
+		if (!Chunks.Contains(Chunk) && IsChunkInRad(ChunkNow, Chunk))
 		{
-			OutRemovableChunk = {Elem.Key, Elem.Value};
+			AddChunk(Chunk, StreamSet);
+			if (!Path.IsEmpty()) AddPathSpline(Chunk, Path);
 			return true;
 		}
 	}
-	
+
 	return false;
 }
 
-void ALandscapeManager::UpdateSingleChunk(const int32 SectionIndex)
-{
-	// We take Mesh of given SectionIndex to new ChunkCoord.
-	// Need information generated.
 
-	ProceduralMeshComponent->UpdateMeshSection(
-		SectionIndex,
-		Vertices, 
-		Normals, 
-		UVs, 
-		TArray<FColor>(), 
-		Tangents 
+void ALandscapeManager::UpdateDataQueue(const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap)
+{
+
+	ParallelFor(ChunksNeeded.Num(), [ChunksNeeded, NearGatesMap, this](int32 Index)
+		{ // lambda body
+
+			FIntPoint Chunk = ChunksNeeded[Index];
+
+			// find gates belong to neighbor chunks.
+			TArray<TPair<FGate, FGate>> NearGates;
+			for (int32 j = -1; j <= 1; j++)
+				for (int32 i = -1; i <= 1; i++)
+				{
+					const TPair<FGate, FGate>* FoundGates = NearGatesMap.Find(Chunk + FIntPoint(i, j));
+					if (FoundGates) NearGates.Add( (*FoundGates) );
+				}
+
+			this->ChunkQueue.Enqueue(MakeChunkData(Chunk, NearGates));
+		}
 	);
 
-	// Drawing DebugPoint
-	if(ShouldDrawDebugPoint)
-	{
-		DrawDebugPoints();
-	}
-	// debug
-
-	return;
-}
-
-void ALandscapeManager::DrawSingleChunk(const FIntPoint ChunkCoord)
-{
-	// Possible Optimizations : We don't need to create collisions for most of the chunks.
-
-	if(ProceduralMeshComponent == nullptr)
-	{
-		UE_LOG(LogTemp, Error, TEXT(" %s : ProceduralMeshComponent nullptr"), *GetName());
-		return;
-	}
-
-	// Drawing Meshes
-	ProceduralMeshComponent->CreateMeshSection(
-		ChunkSectionIndex,
-		Vertices, 
-		Triangles, 
-		Normals, 
-		UVs, 
-		TArray<FColor>(), 
-		Tangents, 
-		true
-	);
-
-
-	// Assigning Landscape Material
-	if( LandscapeMaterial )
-	{
-		ProceduralMeshComponent->SetMaterial(ChunkSectionIndex, LandscapeMaterial);
-	}
-
-	// Updating TMap<Key=ChunkCoord, Value=ChunkSectionIndex> ChunkStatus
-	ChunkStatus.Add(ChunkCoord, ChunkSectionIndex);
-
-
-	// IMPORTANT!! ChunkSectionIndex Update!
-	ChunkSectionIndex++;
-	// IMPORTANT!! 
-
-
-	// Drawing DebugPoint
-	if(ShouldDrawDebugPoint)
-	{
-		DrawDebugPoints();
-	}
-	// debug
-
-	return;
 }
 
 
-/* Tools */
-
-void ALandscapeManager::ResetChunkInfo()
+FChunkData ALandscapeManager::MakeChunkData(const FIntPoint TargetChunk, const TArray< TPair<FGate, FGate> > NearGates)
 {
-	Vertices.Reset();
-	Normals.Reset();
-	UVs.Reset();
-	Tangents.Reset();
+
+	TArray<FVector> Paths;
+	TArray<FVector> PathForSpline;
+	for (auto& Elem : NearGates)
+	{
+		TArray<FVector> TempPath;
+		PathFinder->GetActualPath(Elem.Key, Elem.Value, TempPath);
+		Paths.Append(TempPath);
+		if (GetChunk(Elem.Key.B) == TargetChunk) PathForSpline = TempPath;
+	}
+
+	RealtimeMesh::FRealtimeMeshStreamSet StreamSet;
+	ChunkBuilder->GetStreamSet(TargetChunk, Paths, StreamSet);
+	FChunkData Out(TargetChunk, StreamSet, PathForSpline);
+	return Out;
+}
+
+
+// finds gates that are in BigChunkOrder radius.
+void ALandscapeManager::FindNearGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap)
+{
+	OutGatesMap.Empty();
+
+	FRWScopeLock Lock(RWGatesMutex, FRWScopeLockType::SLT_Write);
+	for (auto& Elem : this->BigChunkOrder)
+	{
+		FIntPoint TargetChunk = Elem + ChunkNow;
+		TPair<FGate, FGate>* FoundGates = this->GateMap.Find(TargetChunk);
+		if (FoundGates) OutGatesMap.Add(TargetChunk, (*FoundGates));
+	}
+}
+
+void ALandscapeManager::FindChunksNeeded(const FIntPoint& ChunkNow, TArray<FIntPoint>& OutChunksNeeded)
+{
+	OutChunksNeeded.Empty();
+	TQueue<FIntPoint, EQueueMode::Mpsc> TempQueue;
+
+	{// scopelock read
+		FRWScopeLock Lock(RWChunksMutex, FRWScopeLockType::SLT_ReadOnly);
+
+		ParallelFor(ChunkOrder.Num(), [&TempQueue, ChunkNow, this](int32 Index)
+			{
+				FIntPoint Target = this->ChunkOrder[Index] + ChunkNow;
+				if (!Chunks.Contains(Target)) TempQueue.Enqueue(Target);
+			}
+		);
+
+	}
+
+	while (!TempQueue.IsEmpty())
+	{
+		FIntPoint Target;
+		TempQueue.Dequeue(Target);
+		OutChunksNeeded.Add(Target);
+	}
+}
+
+
+bool ALandscapeManager::ShouldDoWork(const FIntPoint& ChunkNow)
+{
+	if (!ChunkQueue.IsEmpty()) return false;
+
+	if (LastLocation != ChunkNow)
+	{
+		LastLocation = ChunkNow;
+		ShouldWorkCounter = 1;
+	}
+	else if (ShouldWorkCounter != 0)
+	{
+		if (ShouldWorkCounter % UpdateDelayFrames == 0)
+		{
+			ShouldWorkCounter = 0;
+			return true;
+		}
+		else ShouldWorkCounter++;
+	}
+
+	return false;
+}
+
+
+// Infinite pathfinding. maybe we should use a dedicated thread.
+// do one way first.
+
+
+void ALandscapeManager::TryUpdatingGoal(const FIntPoint& ChunkNow)
+{
+
+	if (ShouldUpdateGoal(ChunkNow))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Attempting to Update Goal"));
+		UpdateGoal();
+	}
+	if (UpdatedGoal)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Goal Updated!"));
+		PathWorker.reset();
+		UpdatedGoal = false;
+	}
+
+}
+
+bool ALandscapeManager::ShouldUpdateGoal(const FIntPoint& ChunkNow)
+{
+	return IsChunkInRad(ChunkNow, GetChunk(End), ChunkRadius * 2);
+}
+
+void ALandscapeManager::UpdateGoal()
+{
+	PathWorker = std::make_unique<FPathWorker>(this);
+}
+
+
+// --------------pathworker.
+
+bool FPathWorker::Init()
+{
+	if (!pLM) return false;
+
+	if (pLM->GatePath.Num() - 2 < 0) return false;
+
+	this->Start = pLM->GatePath[pLM->GatePath.Num() - 2].B; // Last one is goal, so -1. Last gate is our start.
+	this->End = pLM->GatePath.Last().A + FIntPoint(pLM->ChunkRadius * 2 * (pLM->VerticesPerChunk - 1), 0);
+	return true;
+}
+
+uint32 FPathWorker::Run()
+{
+	TArray<FGate> NewGatePath;
+	bool Success = pLM->PathFinder->GetGatePath(Start, End, NewGatePath);
+	if (!Success)
+	{
+		UE_LOG(LogTemp, Error, TEXT("INF Path Calc Error. Abort"));
+		return 0;
+	}
+
 	
-	return;
+	{	// scopelock
+
+		FRWScopeLock Lock(pLM->RWGatesMutex, FRWScopeLockType::SLT_Write);
+
+		int32 LastIndex = pLM->GatePath.Num() - 1;
+		// remove last element. (goal).
+		pLM->GatePath.RemoveAt(LastIndex--);
+		// set first. (gate to prev goal chunk).
+		NewGatePath[0] = pLM->GatePath.Last();
+		// remove last element. ( gate to prev goal chunk )
+		pLM->GatePath.RemoveAt(LastIndex--);
+		pLM->GatePath.Append(NewGatePath);
+		pLM->End = this->End;
+		pLM->UpdateGateMap(LastIndex);
+
+	}	// scopelock
+
+	return uint32(0); // success
 }
 
-bool ALandscapeManager::IsChunkInRadius(const FIntPoint StartChunk, const FIntPoint CurrentChunkCoord, const float RadiusByLength)
+void FPathWorker::Exit()
 {
-	FVector2D StartPointCenter = GetChunkCenter(StartChunk);
-	FVector2D CurrentChunkCenter = GetChunkCenter(CurrentChunkCoord);
-
-    return RadiusByLength >= FVector2d::Distance(StartPointCenter, CurrentChunkCenter);
+	pLM->UpdatedGoal = true;
 }
 
-FVector2D ALandscapeManager::GetChunkCenter(const FIntPoint& ChunkCoord)
+FPathWorker::~FPathWorker()
 {
-	FVector2D ChunkLength = FVector2D( (ChunkVertexCount.X - 1), (ChunkVertexCount.Y - 1)) * CellSize;
-	FVector2D Offset = FVector2D( ChunkCoord.X * ChunkLength.X , ChunkCoord.Y * ChunkLength.Y  );
-
-	FVector2D Center = ChunkLength / 2;
-
-	return Offset + Center;
-}
-
-FIntPoint ALandscapeManager::GetPlayerLocatedChunk()
-{
-	if(PlayerCharacter == nullptr)
+	if (Thread)
 	{
-		UE_LOG(LogTemp, Display, TEXT("PlayerCharacterPointer == nullptr"));
-
-		return FIntPoint(0,0);
+		Thread->Kill(true);
+		delete Thread;
+		Thread = nullptr;
 	}
 
-	// conversion to 2d Vector (we don't need Z axis)
-	FVector2D PlayerLocation = FVector2D( PlayerCharacter->GetActorLocation() ); 
-	// length of each side of chunk
-	FVector2D Length = FVector2D( (ChunkVertexCount.X - 1) , (ChunkVertexCount.Y - 1) ) * CellSize; 
-	// ChunkCoord of the chunk where player is located.
-	FIntPoint PlayerLocatedChunkCoord = FIntPoint( int32(PlayerLocation.X / Length.X) , int32(PlayerLocation.Y / Length.Y) );
-
-	if(PlayerLocation.X < 0)
-	{
-		PlayerLocatedChunkCoord.X -= 1;
-	}
-	if (PlayerLocation.Y < 0)
-	{
-		PlayerLocatedChunkCoord.Y -= 1;
-	}
-
-	// UE_LOG(LogTemp, Display, TEXT("Player Current ChunkCoord : ( %d , %d )"), PlayerLocatedChunkCoord.X, PlayerLocatedChunkCoord.Y);
-
-	return PlayerLocatedChunkCoord;
-}
-
-void ALandscapeManager::DrawDebugPoints()
-{
-	
-	for (int i = 0; i < Vertices.Num(); i++)
-	{
-		DrawDebugPoint(this->GetWorld(), Vertices[i], 5, FColor::Red, true);
-	}
-	
-	return;
-}
-
-float ALandscapeManager::GenerateHeight(const FVector2D& Location)
-{
-
-	float height = 0;
-
-	for ( int i = 0; i < PerlinNoiseLayers.Num(); i++)
-	{
-		float NoiseScale = 1 / PerlinNoiseLayers[i].Frequency;
-		float Amplitude = PerlinNoiseLayers[i].Amplitude;
-		float Offset = PerlinNoiseLayers[i].Offset;
-		height += FMath::PerlinNoise2D(Location * NoiseScale + FVector2d(0.1f, 0.1f) + Offset) * Amplitude;
-	}
-
-	return height;
-}
-
-
-// FLandscapeInfoGenerator
-
-void FLandscapeInfoGenerator::DoWork()
-{
-	ALandscapeManager* LMP = LandscapeManager;
-
-	LMP->IsChunkInfoGenerating = true;
-
-	FIntPoint& NeededChunk = LMP->NeededChunk;
-	TPair<FIntPoint, int32>& RemovableChunk = LMP->RemovableChunk;
-
-	FIntPoint PlayerLocatedChunk = LMP->GetPlayerLocatedChunk();
-
-	// NeededChunk and RemovableChunk are OutParameters
-	// try finding Needed and Removable chunk set.
-
-
-	if( LMP->FindNeededChunk( NeededChunk, PlayerLocatedChunk ) == false 
-		|| 
-		LMP->FindRemovableChunk( RemovableChunk, PlayerLocatedChunk ) == false )
-	{
-
-		LMP->IsChunkInfoGenerating = false;
-		return;
-	}
-
-	LMP->GenerateChunkInfo(NeededChunk);
-
-	LMP->IsChunkInfoReady = true;
-	LMP->IsChunkInfoGenerating = false;
-
-	return;
 }
