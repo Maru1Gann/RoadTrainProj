@@ -61,6 +61,7 @@ void ALandscapeManager::Tick(float DeltaTime)
 		{
 			FrameCounter = 0;
 			Process(ChunkNow);
+
 		}
 		FrameCounter++;
 	}
@@ -88,8 +89,8 @@ void ALandscapeManager::BeginPlay()
 	LastLocation = PlayerChunk + FIntPoint(-100, -100);
 
 	UE_LOG(LogTemp, Warning, TEXT("Overriding Start and End on BeginPlay"));
-	Start = ( PlayerChunk - FIntPoint(ChunkRadius * 2, PlayerChunk.Y) ) * (VerticesPerChunk-1);
-	End = (PlayerChunk + FIntPoint(ChunkRadius * 2, PlayerChunk.Y)) * (VerticesPerChunk - 1);
+	Start = ( PlayerChunk - FIntPoint(ChunkRadius * 4, PlayerChunk.Y) ) * (VerticesPerChunk-1);
+	End = (PlayerChunk + FIntPoint(ChunkRadius * 4, PlayerChunk.Y)) * (VerticesPerChunk - 1);
 
 	IsPath = PathFinder->GetGatePath(Start, End, GatePath);
 	if (!IsPath) { UE_LOG(LogTemp, Warning, TEXT("No Path Error")); }
@@ -179,6 +180,33 @@ void ALandscapeManager::Debug()
 	PathFinder->GetGates(FGate(Start), Start, Gates, true);
 	
 }
+
+
+TArray<USplineComponent*> ALandscapeManager::GetNearSplines()
+{
+	TArray<USplineComponent*> NearSplines;
+
+	FIntPoint ChunkNow = GetChunk(GetPlayerLocation());
+
+	FRWScopeLock Lock(RWGatesMutex, FRWScopeLockType::SLT_ReadOnly);
+	FRWScopeLock Lock2(RWChunksMutex, FRWScopeLockType::SLT_ReadOnly);
+	for(int32 j = -1; j<=1; j++)
+		for (int32 i = -1; i <= 1; i++)
+		{
+			FIntPoint Target = ChunkNow + FIntPoint(i, j);
+			if (!GateMap.Contains(Target)) continue;
+
+			ARealtimeMeshActor** ppRMA = Chunks.Find(Target);
+			if (!ppRMA || !(*ppRMA)) continue;
+
+			USplineComponent* pSpline = (*ppRMA)->GetComponentByClass<USplineComponent>();
+			if (pSpline) NearSplines.Add(pSpline);
+		}
+
+	return NearSplines;
+}
+
+
 
 float ALandscapeManager::GetHeight( const FVector2D& Location )
 {
@@ -570,7 +598,7 @@ void ALandscapeManager::FindNearGates(const FIntPoint& ChunkNow, TMap<FIntPoint,
 {
 	OutGatesMap.Empty();
 
-	FScopeLock Lock(&GatesMutex);
+	FRWScopeLock Lock(RWGatesMutex, FRWScopeLockType::SLT_Write);
 	for (auto& Elem : this->BigChunkOrder)
 	{
 		FIntPoint TargetChunk = Elem + ChunkNow;
@@ -686,7 +714,7 @@ uint32 FPathWorker::Run()
 	
 	{	// scopelock
 
-		FScopeLock Lock(&pLM->GatesMutex);
+		FRWScopeLock Lock(pLM->RWGatesMutex, FRWScopeLockType::SLT_Write);
 
 		int32 LastIndex = pLM->GatePath.Num() - 1;
 		// remove last element. (goal).

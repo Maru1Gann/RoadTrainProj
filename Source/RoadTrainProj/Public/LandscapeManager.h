@@ -97,6 +97,9 @@ public:
     UFUNCTION(CallInEditor, Category = "Terrain")
         void Debug();
 
+    UFUNCTION(BluePrintCallable, Category = "Comm")
+        TArray<USplineComponent*> GetNearSplines();
+
 
     void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
     bool RemoveChunk(const FIntPoint& Chunk);
@@ -122,7 +125,7 @@ private:
     int32 FrameCounter;
     int32 ShouldWorkCounter;
 
-    FCriticalSection GatesMutex;
+    FRWLock RWGatesMutex;
     TArray<FGate> GatePath;
     TMap<FIntPoint, TPair<FGate, FGate>> GateMap;
     // ก่ game thread only
