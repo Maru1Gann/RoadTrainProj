@@ -12,6 +12,8 @@ FPathFinder::FPathFinder( ALandscapeManager* pLM ) : pLM( pLM )
 {
 	MaxSlopeTanSqr = FMath::Square(pLM->MaxSlope / 100.f);
 	SlopeViolationPanelty = pLM->SlopeViolationPanelty;
+	MinTurnRadius = pLM->MinTurnRadius;
+	UnitMinTurnRadius = MinTurnRadius / pLM->VertexSpacing;
 }
 
 // temporary struct for pathfinding.
@@ -300,7 +302,7 @@ void FPathFinder::GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, 
 		FNode& NodeNow = Frontier[GetFlatIndex(Current)];
 
 		// ----------if met potential gate. (chunk boundary)---------
-		if ( IsOnBoundary(Current) )
+		if ( IsOnBoundary(Current) /*&& GetUnitDistSqr(Start, Current) < FMath::Square(UnitMinTurnRadius*2)*/ ) // considering turn radius.
 		{
 			// find possible edges.
 			TArray<FIntPoint> NeighborsTemp;
@@ -699,7 +701,7 @@ void FPathFinder::SmoothPath(TArray<FIntPoint>& Path)
 	while (CurrentPoint <= LastIndex - 2 && CheckPoint <= LastIndex - 2)
 	{
 		float UnitDistSqr = GetUnitDistSqr(SmoothPath[CheckPoint], SmoothPath[CurrentPoint]);
-		if (UnitDistSqr < FMath::Square(3)) // Square(Turning Radius*2)
+		if (UnitDistSqr < FMath::Square( UnitMinTurnRadius*2 ) ) // Square( Turning Radius*2 ) (unit)
 		{
 			CurrentPoint++; // skip
 		}
@@ -711,41 +713,42 @@ void FPathFinder::SmoothPath(TArray<FIntPoint>& Path)
 		}
 	}
 
-	Path.Add(SmoothPath[LastIndex - 1]);	// keep EndGate.A
+	//Path.Add(SmoothPath[LastIndex - 1]);	// keep EndGate.A
 	Path.Add(SmoothPath[LastIndex]);		// keep EndGate.B
 
 }
 
 // returns full path made from SmoothPath.
 // returns global FVector Path.
-// returns SGate AB ~ EGate AB.
-void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath)
+// *new* returns Final Direction.
+// *new* returns SGate B ~ EGate B
+FVector2D FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath, const FVector2D& StartDirection = FVector2D::ZeroVector)
 {
 	// from StartGate B ~ EndGate B (if both gates)
 	// from StartGate B ~ EndGate A (if Endgoal)
 
 	if (SmoothPath.Num() < 2 )
 	{
-		return;
+		return FVector2D::ZeroVector;
 	}
 
 	FIntPoint Chunk = GetChunk(SmoothPath[1]);
 
 	OutPath.Empty();
 
-	FVector2D LastDirection;
+	// init last direction.
+	FVector2D LastDirection = StartDirection;
 	int32 StartIndex = 1;
-	if (SmoothPath[0] == SmoothPath[1])
-	{		
-		LastDirection = (GridToCell(SmoothPath[2]) - GridToCell(SmoothPath[1])).GetSafeNormal(); // starting point
-	}
-	else 
+	if (LastDirection == FVector2D::ZeroVector)
 	{
-		StartIndex = 0;
-		LastDirection = (GridToCell(SmoothPath[1]) - GridToCell(SmoothPath[0])).GetSafeNormal(); // gate
-	}									
+		if (SmoothPath[0] == SmoothPath[1]) 
+			LastDirection = ( GridToCell(SmoothPath[2]) - GridToCell(SmoothPath[1]) ).GetSafeNormal(); // starting point
+		else 
+			LastDirection = ( GridToCell(SmoothPath[1]) - GridToCell(SmoothPath[0]) ).GetSafeNormal(); // gate
+	}
+								
 	
-	float TurnRadius = pLM->VertexSpacing * 1.5 ;		// should fix this later. (minimal turnradius)
+	float TurnRadius = MinTurnRadius ;		// should fix this later. (minimal turnradius)
 
 	int32 LastIndex = SmoothPath.Num() - 1;
 	int32 IndexEnd = LastIndex;								// do it to EndGate.A, EndGate.B
@@ -797,8 +800,7 @@ void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVecto
 
 		// we can do more work on height smoothing.
 
-		// this does not add the actual last SmoothPath.
-
+		// this does not add the actual last SmoothPath. ( point )
 		LastDirection = Direction;
 	} 
 
@@ -807,6 +809,8 @@ void FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVecto
 	FVector2D Last2D = GridToCell( SmoothPath[ IndexEnd ] );
 	Last = FVector(Last2D.X, Last2D.Y, GetCellHeight(SmoothPath[IndexEnd]));
 	OutPath.Add(Last);
+
+	return LastDirection;
 
 	// UE_LOG(LogTemp, Warning, TEXT("RebuildPath Num %d"), OutPath.Num());
 	

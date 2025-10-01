@@ -79,8 +79,10 @@ public:
     // SlopeViolationPanelty will be multiplied to the movecost when slope is violated.
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "1.0", ClampMax = "10.0"))
         float SlopeViolationPanelty = 2.0;
+    UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 5, ClampMin = "1500.0", ClampMax = "10000.0", Units = "cm"))
+        float MinTurnRadius = 1500.0f;
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 5, ClampMin = "0"))
-        int32 CounterHardLock = 1000;
+        int32 CounterHardLock = 20000;
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 6))
         bool DrawPathDebug = false;
     UPROPERTY( EditAnywhere, Category = "Path|Mesh", meta = (DisplayPriority = 1, ClampMin = "0.0", ClampMax = "180.0"))
