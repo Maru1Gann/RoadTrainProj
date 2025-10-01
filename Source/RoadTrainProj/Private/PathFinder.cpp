@@ -302,7 +302,7 @@ void FPathFinder::GetGates(const FGate& StartGate, const FIntPoint& GlobalGoal, 
 		FNode& NodeNow = Frontier[GetFlatIndex(Current)];
 
 		// ----------if met potential gate. (chunk boundary)---------
-		if ( IsOnBoundary(Current) /*&& GetUnitDistSqr(Start, Current) < FMath::Square(UnitMinTurnRadius*2)*/ ) // considering turn radius.
+		if ( IsOnBoundary(Current) && GetUnitDistSqr(Start, Current) >= FMath::Square(UnitMinTurnRadius*2) ) // considering turn radius.
 		{
 			// find possible edges.
 			TArray<FIntPoint> NeighborsTemp;
