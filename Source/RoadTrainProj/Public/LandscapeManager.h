@@ -130,7 +130,7 @@ private:
     FRWLock RWGatesMutex;
     TArray<FGate> GatePath;
     TMap<FIntPoint, TPair<FGate, FGate>> GateMap;
-    // ก่ game thread only
+    TMap<FIntPoint, FVector2D> GateLastDir;
 
 
     // ก้ background thread produces.
@@ -155,6 +155,7 @@ private:
 
     FVector GetPlayerLocation();
     void UpdateGateMap(const int32& StartIndex = 0);
+    void UpdateDirMap(const int32& StartIndex = 0);
 
    
     // async related below
@@ -169,12 +170,13 @@ private:
     // background thread tasks.
     void AsyncWork(const FIntPoint& ChunkNow);
 
-    void UpdateDataQueue(const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap);
-    FChunkData MakeChunkData(const FIntPoint TargetChunk, const TArray< TPair<FGate, FGate> > NearGates);
+    // copy params.
+    void UpdateDataQueue(const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap, const TMap<FIntPoint, FVector2D> NearDirMap);
+    FChunkData MakeChunkData(const FIntPoint TargetChunk, const TArray< TPair<FGate, FGate> > NearGates, const TArray<FVector2D> NearDir);
 
    
     // mutex
-    void FindNearGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap);
+    void FindNearGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap, TMap<FIntPoint, FVector2D>& OutDirMap);
     void FindChunksNeeded(const FIntPoint& ChunkNow, TArray<FIntPoint>& OutChunksNeeded);
 
     // game thread. checks if work needed.

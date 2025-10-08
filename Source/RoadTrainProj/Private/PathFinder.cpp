@@ -748,7 +748,7 @@ FVector2D FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<F
 	}
 								
 	
-	float TurnRadius = MinTurnRadius ;		// should fix this later. (minimal turnradius)
+	float TurnRadius = MinTurnRadius ;		// minimal turnradius
 
 	int32 LastIndex = SmoothPath.Num() - 1;
 	int32 IndexEnd = LastIndex;								// do it to EndGate.A, EndGate.B
@@ -817,7 +817,7 @@ FVector2D FPathFinder::RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<F
 }
 
 // Macro.
-void FPathFinder::GetActualPath(const FGate& StartGate, const FGate& EndGate, TArray<FVector>& OutPath)
+FVector2D FPathFinder::GetActualPath(const FGate& StartGate, const FGate& EndGate, TArray<FVector>& OutPath, const FVector2D& StartDirection)
 {
 
 	TArray<FIntPoint> Path;
@@ -825,8 +825,8 @@ void FPathFinder::GetActualPath(const FGate& StartGate, const FGate& EndGate, TA
 	SmoothPath(Path);
 
 	OutPath.Empty();
-	RebuildPath(Path, OutPath);
-	return;
+	FVector2D LastDir = RebuildPath(Path, OutPath, StartDirection);
+	return LastDir;
 }
 
 
@@ -976,7 +976,8 @@ bool FPathFinder::GetCurve(const FVector2D& StartDirection, const FVector2D& Cur
 		return false;
 	}
 
-	float NewTurnRadius = (CurNextDist / 2) * 2 / 3;
+	float NewTurnRadius = (CurNextDist / 2) / 2;
+	if (NewTurnRadius < TurnRadius) NewTurnRadius = TurnRadius;
 
 	FVector2D CenterR = Current + FVector2D(-StartDirection.Y, StartDirection.X).GetSafeNormal() * NewTurnRadius; // 90 degree turn. cw
 	FVector2D CenterL = Current + FVector2D(StartDirection.Y, -StartDirection.X).GetSafeNormal() * NewTurnRadius; // 90 degree turn. ccw

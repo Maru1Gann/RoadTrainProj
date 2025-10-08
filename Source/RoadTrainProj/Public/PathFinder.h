@@ -23,7 +23,7 @@ public:
     FVector2D RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath, const FVector2D& StartDirection);
 
     // macro
-    void GetActualPath(const FGate& StartGate, const FGate& EndGate, TArray<FVector>& OutPath);
+    FVector2D GetActualPath(const FGate& StartGate, const FGate& EndGate, TArray<FVector>& OutPath, const FVector2D& StartDirection = FVector2D::ZeroVector);
     
 private:
 
