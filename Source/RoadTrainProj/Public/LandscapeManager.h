@@ -79,8 +79,10 @@ public:
     // SlopeViolationPanelty will be multiplied to the movecost when slope is violated.
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 4, ClampMin = "1.0", ClampMax = "10.0"))
         float SlopeViolationPanelty = 2.0;
+    UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 5, ClampMin = "1500.0", ClampMax = "10000.0", Units = "cm"))
+        float MinTurnRadius = 1500.0f;
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 5, ClampMin = "0"))
-        int32 CounterHardLock = 1000;
+        int32 CounterHardLock = 20000;
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 6))
         bool DrawPathDebug = false;
     UPROPERTY( EditAnywhere, Category = "Path|Mesh", meta = (DisplayPriority = 1, ClampMin = "0.0", ClampMax = "180.0"))
@@ -128,7 +130,7 @@ private:
     FRWLock RWGatesMutex;
     TArray<FGate> GatePath;
     TMap<FIntPoint, TPair<FGate, FGate>> GateMap;
-    // ก่ game thread only
+    TMap<FIntPoint, FVector2D> GateLastDir;
 
 
     // ก้ background thread produces.
@@ -153,6 +155,7 @@ private:
 
     FVector GetPlayerLocation();
     void UpdateGateMap(const int32& StartIndex = 0);
+    void UpdateDirMap(const int32& StartIndex = 0);
 
    
     // async related below
@@ -167,12 +170,13 @@ private:
     // background thread tasks.
     void AsyncWork(const FIntPoint& ChunkNow);
 
-    void UpdateDataQueue(const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap);
-    FChunkData MakeChunkData(const FIntPoint TargetChunk, const TArray< TPair<FGate, FGate> > NearGates);
+    // copy params.
+    void UpdateDataQueue(const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap, const TMap<FIntPoint, FVector2D> NearDirMap);
+    FChunkData MakeChunkData(const FIntPoint TargetChunk, const TArray< TPair<FGate, FGate> > NearGates, const TArray<FVector2D> NearDir);
 
    
     // mutex
-    void FindNearGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap);
+    void FindNearGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap, TMap<FIntPoint, FVector2D>& OutDirMap);
     void FindChunksNeeded(const FIntPoint& ChunkNow, TArray<FIntPoint>& OutChunksNeeded);
 
     // game thread. checks if work needed.
