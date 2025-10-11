@@ -90,7 +90,7 @@ void ALandscapeManager::BeginPlay()
 
 	UE_LOG(LogTemp, Warning, TEXT("Overriding Start and End on BeginPlay"));
 	Start = ( PlayerChunk - FIntPoint(ChunkRadius * 4, PlayerChunk.Y) ) * (VerticesPerChunk-1);
-	End = (PlayerChunk + FIntPoint(ChunkRadius * 4, PlayerChunk.Y)) * (VerticesPerChunk - 1);
+	End = ( PlayerChunk + FIntPoint(ChunkRadius * 4, PlayerChunk.Y) ) * (VerticesPerChunk - 1);
 
 	IsPath = PathFinder->GetGatePath(Start, End, GatePath);
 	if (!IsPath) { UE_LOG(LogTemp, Warning, TEXT("No Path Error")); }
@@ -98,6 +98,7 @@ void ALandscapeManager::BeginPlay()
 
 
 	UpdateGateMap();
+	UpdateDirMap();
 	UE_LOG(LogTemp, Warning, TEXT("GateMapNum %d"), GateMap.Num() );
 
 }
@@ -204,6 +205,40 @@ TArray<USplineComponent*> ALandscapeManager::GetNearSplines()
 		}
 
 	return NearSplines;
+}
+
+bool ALandscapeManager::GetSpawnPos(FVector& OutVector)
+{
+
+	OutVector = FVector::ZeroVector;
+	
+	FGate TempS, TempE;
+	FVector2D* pStartDir = nullptr;
+	FVector2D StartDir = FVector2D::ZeroVector;
+
+	{	// scopelock
+		FRWScopeLock Lock(RWGatesMutex, FRWScopeLockType::SLT_ReadOnly);
+
+		if (GatePath.Num() <= 1) return false;
+		int32 Mid = (GatePath.Num() - 1) / 2;
+		TempS = GatePath[Mid];
+		TempE = GatePath[Mid + 1];
+		pStartDir = GateLastDir.Find(GetChunk(TempS.B));
+
+		if (pStartDir) StartDir = *pStartDir;
+	}
+
+	TArray<FVector> OutPath;
+	PathFinder->GetActualPath(TempS, TempE, OutPath, StartDir);
+
+	if (OutPath.Num() <= 1) return false;
+	else
+	{
+		int32 Mid = (OutPath.Num() - 1) / 2;
+		OutVector = OutPath[Mid];
+		return true;
+	}
+
 }
 
 
@@ -480,6 +515,21 @@ void ALandscapeManager::UpdateGateMap(const int32& StartIndex)
 	}
 }
 
+void ALandscapeManager::UpdateDirMap(const int32& StartIndex)
+{
+	for (int32 i = StartIndex; i < GatePath.Num()-1; i++)
+	{
+		FIntPoint Chunk = GetChunk(GatePath[i].B);
+		FVector2D* FoundDir = GateLastDir.Find(Chunk);
+		FVector2D Direction = FVector2D::ZeroVector;
+		if (FoundDir) Direction = *FoundDir;
+
+		TArray<FVector> TempPath;
+		FVector2D LastDir = PathFinder->GetActualPath(GatePath[i], GatePath[i + 1], TempPath, Direction);
+		GateLastDir.Add(GetChunk(GatePath[i + 1].B), LastDir);
+	}
+}
+
 
 // async works below.
 
@@ -493,12 +543,14 @@ void ALandscapeManager::AsyncWork(const FIntPoint& ChunkNow)
 	AsyncTask(ENamedThreads::AnyBackgroundHiPriTask, [this, ChunkNow]()
 		{
 			TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap;
-			FindNearGates(ChunkNow, NearGatesMap);
+			TMap<FIntPoint, FVector2D> NearDirMap;
+			FindNearGates(ChunkNow, NearGatesMap, NearDirMap);
 
 			TArray<FIntPoint> ChunksNeeded;
 			FindChunksNeeded(ChunkNow, ChunksNeeded);
 
-			this->UpdateDataQueue( ChunksNeeded, NearGatesMap );
+			this->UpdateDataQueue( ChunksNeeded, NearGatesMap, NearDirMap);
+
 		}
 	);
 
@@ -549,40 +601,56 @@ bool ALandscapeManager::DequeueAndAddChunk(const FIntPoint& ChunkNow)
 }
 
 
-void ALandscapeManager::UpdateDataQueue(const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap)
+void ALandscapeManager::UpdateDataQueue(const TArray<FIntPoint> ChunksNeeded, const TMap<FIntPoint, TPair<FGate, FGate>> NearGatesMap, const TMap<FIntPoint, FVector2D> NearDirMap)
 {
 
-	ParallelFor(ChunksNeeded.Num(), [ChunksNeeded, NearGatesMap, this](int32 Index)
+	ParallelFor(ChunksNeeded.Num(), [ChunksNeeded, NearGatesMap, NearDirMap, this](int32 Index)
 		{ // lambda body
 
 			FIntPoint Chunk = ChunksNeeded[Index];
 
 			// find gates belong to neighbor chunks.
 			TArray<TPair<FGate, FGate>> NearGates;
+			TArray<FVector2D> NearDir;
 			for (int32 j = -1; j <= 1; j++)
 				for (int32 i = -1; i <= 1; i++)
 				{
-					const TPair<FGate, FGate>* FoundGates = NearGatesMap.Find(Chunk + FIntPoint(i, j));
-					if (FoundGates) NearGates.Add( (*FoundGates) );
+					FIntPoint TargetChunk = Chunk + FIntPoint(i, j);
+					const TPair<FGate, FGate>* FoundGates = NearGatesMap.Find(TargetChunk);
+					const FVector2D* FoundDir = NearDirMap.Find(TargetChunk);
+					FVector2D Dir = FVector2D::ZeroVector;
+					if (FoundGates)
+					{
+						NearGates.Add((*FoundGates));
+
+						if (FoundDir) Dir = *FoundDir;
+						NearDir.Add(Dir);
+					}
+					
 				}
 
-			this->ChunkQueue.Enqueue(MakeChunkData(Chunk, NearGates));
+			this->ChunkQueue.Enqueue( MakeChunkData(Chunk, NearGates, NearDir) );
+
 		}
 	);
 
 }
 
 
-FChunkData ALandscapeManager::MakeChunkData(const FIntPoint TargetChunk, const TArray< TPair<FGate, FGate> > NearGates)
+FChunkData ALandscapeManager::MakeChunkData(const FIntPoint TargetChunk, const TArray< TPair<FGate, FGate> > NearGates, const TArray<FVector2D> NearDir)
 {
 
 	TArray<FVector> Paths;
 	TArray<FVector> PathForSpline;
-	for (auto& Elem : NearGates)
+	for (int32 i = 0; i< NearGates.Num(); i++)
 	{
+		const TPair<FGate, FGate>& Elem = NearGates[i];
+		const FVector2D LastDir = NearDir[i];
+
 		TArray<FVector> TempPath;
-		PathFinder->GetActualPath(Elem.Key, Elem.Value, TempPath);
+		PathFinder->GetActualPath(Elem.Key, Elem.Value, TempPath, LastDir);
 		Paths.Append(TempPath);
+
 		if (GetChunk(Elem.Key.B) == TargetChunk) PathForSpline = TempPath;
 	}
 
@@ -594,16 +662,22 @@ FChunkData ALandscapeManager::MakeChunkData(const FIntPoint TargetChunk, const T
 
 
 // finds gates that are in BigChunkOrder radius.
-void ALandscapeManager::FindNearGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap)
+void ALandscapeManager::FindNearGates(const FIntPoint& ChunkNow, TMap<FIntPoint, TPair<FGate, FGate>>& OutGatesMap, TMap<FIntPoint, FVector2D>& OutDirMap)
 {
 	OutGatesMap.Empty();
 
-	FRWScopeLock Lock(RWGatesMutex, FRWScopeLockType::SLT_Write);
+	FRWScopeLock Lock(RWGatesMutex, FRWScopeLockType::SLT_ReadOnly);
 	for (auto& Elem : this->BigChunkOrder)
 	{
 		FIntPoint TargetChunk = Elem + ChunkNow;
 		TPair<FGate, FGate>* FoundGates = this->GateMap.Find(TargetChunk);
-		if (FoundGates) OutGatesMap.Add(TargetChunk, (*FoundGates));
+		FVector2D* FoundDir = nullptr;
+		if (FoundGates)
+		{
+			OutGatesMap.Add(TargetChunk, (*FoundGates));
+			FoundDir = GateLastDir.Find(TargetChunk);
+		}
+		if (FoundDir) OutDirMap.Add(TargetChunk, (*FoundDir) );
 	}
 }
 
@@ -696,8 +770,12 @@ bool FPathWorker::Init()
 
 	if (pLM->GatePath.Num() - 2 < 0) return false;
 
-	this->Start = pLM->GatePath[pLM->GatePath.Num() - 2].B; // Last one is goal, so -1. Last gate is our start.
+	// Last one is goal, so -1. Last gate is our start.
+	this->Start = pLM->GatePath[pLM->GatePath.Num() - 2].B; 
+
+	// just add some value to current End.
 	this->End = pLM->GatePath.Last().A + FIntPoint(pLM->ChunkRadius * 2 * (pLM->VerticesPerChunk - 1), 0);
+
 	return true;
 }
 
@@ -726,8 +804,10 @@ uint32 FPathWorker::Run()
 		pLM->GatePath.Append(NewGatePath);
 		pLM->End = this->End;
 		pLM->UpdateGateMap(LastIndex);
+		pLM->UpdateDirMap(LastIndex);
 
 	}	// scopelock
+
 
 	return uint32(0); // success
 }

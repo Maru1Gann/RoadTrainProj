@@ -20,16 +20,18 @@ public:
 
     // Path Smoother
     void SmoothPath( TArray<FIntPoint>& Path );
-    void RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath);
+    FVector2D RebuildPath(const TArray<FIntPoint>& SmoothPath, TArray<FVector>& OutPath, const FVector2D& StartDirection);
 
     // macro
-    void GetActualPath(const FGate& StartGate, const FGate& EndGate, TArray<FVector>& OutPath);
+    FVector2D GetActualPath(const FGate& StartGate, const FGate& EndGate, TArray<FVector>& OutPath, const FVector2D& StartDirection = FVector2D::ZeroVector);
     
 private:
 
     ALandscapeManager* pLM; // don't change member values!!
     float MaxSlopeTanSqr;
     float SlopeViolationPanelty;
+    float MinTurnRadius;
+    float UnitMinTurnRadius;
 
     // -----------------tools-----------------
 
@@ -66,7 +68,7 @@ private:
     float GetTanSqr(const FIntPoint& Chunk, const FVector2D& LocalA, const FVector2D& LocalB);
 
     bool GetCurve(const FVector2D& StartDirection, const FVector2D& Current, const FVector2D& Next, TArray<FVector2D>& OutRoute, 
-        const float& TurnRadius = 15000.0f, const float& NoTurnAngle = 20.0f);
+        const float& TurnRadius = 1500.0f, const float& NoTurnAngle = 5.0f);
     float GetArcAngle(const FVector2D& Center, const FVector2D& Current, const FVector2D& Next, const bool& IsRightTurn, const float& TurnRadius = 1500.0f);
 
 };
