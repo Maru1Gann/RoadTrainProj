@@ -99,9 +99,11 @@ public:
     UFUNCTION(CallInEditor, Category = "Terrain")
         void Debug();
 
+    // blueprint callables
     UFUNCTION(BluePrintCallable, Category = "Comm")
         TArray<USplineComponent*> GetNearSplines();
-
+    UFUNCTION(BluePrintCallable, Category = "Comm")
+        bool GetSpawnPos(FVector& OutVector);
 
     void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
     bool RemoveChunk(const FIntPoint& Chunk);
