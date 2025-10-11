@@ -207,6 +207,40 @@ TArray<USplineComponent*> ALandscapeManager::GetNearSplines()
 	return NearSplines;
 }
 
+bool ALandscapeManager::GetSpawnPos(FVector& OutVector)
+{
+
+	OutVector = FVector::ZeroVector;
+	
+	FGate TempS, TempE;
+	FVector2D* pStartDir = nullptr;
+	FVector2D StartDir = FVector2D::ZeroVector;
+
+	{	// scopelock
+		FRWScopeLock Lock(RWGatesMutex, FRWScopeLockType::SLT_ReadOnly);
+
+		if (GatePath.Num() <= 1) return false;
+		int32 Mid = (GatePath.Num() - 1) / 2;
+		TempS = GatePath[Mid];
+		TempE = GatePath[Mid + 1];
+		pStartDir = GateLastDir.Find(GetChunk(TempS.B));
+
+		if (pStartDir) StartDir = *pStartDir;
+	}
+
+	TArray<FVector> OutPath;
+	PathFinder->GetActualPath(TempS, TempE, OutPath, StartDir);
+
+	if (OutPath.Num() <= 1) return false;
+	else
+	{
+		int32 Mid = (OutPath.Num() - 1) / 2;
+		OutVector = OutPath[Mid];
+		return true;
+	}
+
+}
+
 
 
 float ALandscapeManager::GetHeight( const FVector2D& Location )
