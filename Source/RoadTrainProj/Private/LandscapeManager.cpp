@@ -815,6 +815,7 @@ uint32 FPathWorker::Run()
 void FPathWorker::Exit()
 {
 	pLM->UpdatedGoal = true;
+	UE_LOG(LogTemp, Warning, TEXT("Updating goal calculation background task done!!"));
 }
 
 FPathWorker::~FPathWorker()
