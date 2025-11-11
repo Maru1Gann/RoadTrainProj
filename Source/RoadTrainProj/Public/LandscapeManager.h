@@ -85,9 +85,13 @@ public:
         int32 CounterHardLock = 20000;
     UPROPERTY(EditAnywhere, Category = "Path", meta = (DisplayPriority = 6))
         bool DrawPathDebug = false;
-    UPROPERTY( EditAnywhere, Category = "Path|Mesh", meta = (DisplayPriority = 1, ClampMin = "0.0", ClampMax = "180.0"))
+    UPROPERTY( EditAnywhere, Category = "Path|Mesh", meta = (DisplayPriority = 0))
         UStaticMesh* RoadMesh;
-    UPROPERTY(EditAnywhere, Category = "Path|Mesh", meta = (DisplayPriority = 2, ClampMin = "0.1", ClampMax = "20.0"))
+    UPROPERTY(EditAnywhere, Category = "Path|Mesh", meta = (DisplayPriority = 1))
+        UMaterialInterface* RoadMaterial;
+    UPROPERTY(EditAnywhere, Category = "Path|Mesh", meta = (DisplayPriority = 2))
+        UMaterialInterface* RoadLineMaterial;
+    UPROPERTY(EditAnywhere, Category = "Path|Mesh", meta = (DisplayPriority = 3, ClampMin = "0.1", ClampMax = "20.0"))
         FVector2D RoadScale;
 
     UFUNCTION(CallInEditor, Category = "Terrain")

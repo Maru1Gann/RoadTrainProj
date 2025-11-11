@@ -14,6 +14,8 @@ ALandscapeManager::ALandscapeManager()
 
 	Material = nullptr;
 	RoadMesh = nullptr;
+	RoadMaterial = nullptr;
+	RoadLineMaterial = nullptr;
 	IsPath = false;
 	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
 
@@ -484,6 +486,12 @@ void ALandscapeManager::MakeRoad(USplineComponent* Spline)
 
 
 		SplineMesh->SetStaticMesh(RoadMesh);
+		if (this->RoadLineMaterial && this->RoadMaterial)
+		{
+			SplineMesh->SetMaterial(0, RoadMaterial);
+			SplineMesh->SetMaterial(1, RoadLineMaterial);
+		}
+
 		SplineMesh->SetStartAndEnd(StartPos, StartTangent, EndPos, EndTangent);
 		SplineMesh->SetStartScale(RoadScale);
 		SplineMesh->SetEndScale(RoadScale);
