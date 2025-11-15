@@ -14,6 +14,9 @@
 #include "LandscapeManager.generated.h"
 
 
+// delegates
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FEventDispatcher);
+
 struct FPerlinNoiseVariables;
 class USplineComponent;
 class FPathWorker;
@@ -109,6 +112,12 @@ public:
     UFUNCTION(BluePrintCallable, Category = "Comm")
         bool GetSpawnPos(FVector& OutVector);
 
+
+    // Event Dispatcher (Delegate)
+    UPROPERTY(BlueprintAssignable, Category = "Events")
+    FEventDispatcher OnFirstGenDone;
+    
+
     void AddChunk(const FIntPoint& Chunk, const RealtimeMesh::FRealtimeMeshStreamSet& StreamSet);
     bool RemoveChunk(const FIntPoint& Chunk);
 
@@ -165,6 +174,8 @@ private:
 
    
     // async related below
+
+    bool IsFirstGenDone = false;
     
     // game thread tasks.
     void Process(const FIntPoint& ChunkNow);

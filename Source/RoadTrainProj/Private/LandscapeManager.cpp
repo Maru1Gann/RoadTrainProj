@@ -63,9 +63,18 @@ void ALandscapeManager::Tick(float DeltaTime)
 		{
 			FrameCounter = 0;
 			Process(ChunkNow);
-
 		}
 		FrameCounter++;
+
+		if (!IsFirstGenDone)
+		{
+			FRWScopeLock Lock(RWChunksMutex, FRWScopeLockType::SLT_ReadOnly);
+			if ((ChunkRadius * 2 + 1) * (ChunkRadius * 2 + 1) <= Chunks.Num())
+			{
+				IsFirstGenDone = true;
+				OnFirstGenDone.Broadcast();
+			}
+		}
 	}
 
 }
