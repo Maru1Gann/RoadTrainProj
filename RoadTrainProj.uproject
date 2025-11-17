@@ -44,5 +44,8 @@
 			"Name": "Inkpot",
 			"Enabled": true
 		}
+	],
+	"TargetPlatforms": [
+		"Windows"
 	]
 }
