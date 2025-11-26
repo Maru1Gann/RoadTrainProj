@@ -7,6 +7,7 @@
 
 #include "DrawDebugHelpers.h"
 
+
 ALandscapeManager::ALandscapeManager()
 {
     PrimaryActorTick.bCanEverTick = true; // enable tick
@@ -50,32 +51,37 @@ void ALandscapeManager::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (UseAsync)
+
+
+	// only if async below ( it's kind of always )
+	if (!UseAsync) return;
+
+	FIntPoint ChunkNow = GetChunk(GetPlayerLocation());
+	if (ShouldDoWork(ChunkNow))
 	{
-		FIntPoint ChunkNow = GetChunk(GetPlayerLocation());
-		if (ShouldDoWork(ChunkNow))
-		{
-			TryUpdatingGoal(ChunkNow);
-			AsyncWork(ChunkNow);
-		}
+		TryUpdatingGoal(ChunkNow);
+		AsyncWork(ChunkNow);
+	}
 
-		if (FrameCounter % DoWorkFrame == 0)
-		{
-			FrameCounter = 0;
-			Process(ChunkNow);
-		}
-		FrameCounter++;
+	if (FrameCounter % DoWorkFrame == 0)
+	{
+		FrameCounter = 0;
+		Process(ChunkNow);
+	}
+	FrameCounter++;
 
-		if (!IsFirstGenDone)
+	if (!IsFirstGenDone) // only on first loading.
+	{
+		while (DequeueAndAddChunk(ChunkNow)); // if this thingy returns true ( added a chunk ) do it again
+
+		FRWScopeLock Lock(RWChunksMutex, FRWScopeLockType::SLT_ReadOnly);
+		if ((ChunkRadius * 2 + 1) * (ChunkRadius * 2 + 1) <= Chunks.Num())  // if all chunks added return.
 		{
-			FRWScopeLock Lock(RWChunksMutex, FRWScopeLockType::SLT_ReadOnly);
-			if ((ChunkRadius * 2 + 1) * (ChunkRadius * 2 + 1) <= Chunks.Num())
-			{
-				IsFirstGenDone = true;
-				OnFirstGenDone.Broadcast();
-			}
+			IsFirstGenDone = true;
+			OnFirstGenDone.Broadcast();
 		}
 	}
+
 
 }
 
@@ -88,6 +94,10 @@ void ALandscapeManager::BeginPlay()
 	GetChunkOrder(ChunkRadius + 1, BigChunkOrder);
 
 	ChunkLength = (VerticesPerChunk - 1) * VertexSpacing;
+
+	// adding random offset to Height layers before giving it to ChunkBuilder & PathFinder
+	for (int32 i = 0; i < NoiseLayers.Num(); i++)
+		NoiseLayers[i].Offset = FMath::FRandRange(-10.f, 10.f);
 
 	ChunkBuilder = std::make_unique<FChunkBuilder>(this, this->Material);
 	PathFinder = std::make_unique<FPathFinder>(this);
@@ -728,7 +738,7 @@ bool ALandscapeManager::ShouldDoWork(const FIntPoint& ChunkNow)
 {
 	if (!ChunkQueue.IsEmpty()) return false;
 
-	if (LastLocation != ChunkNow)
+	if (LastLocation != ChunkNow) // loc changed and queue empty
 	{
 		LastLocation = ChunkNow;
 		ShouldWorkCounter = 1;
